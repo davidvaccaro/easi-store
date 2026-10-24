@@ -1,0 +1,79 @@
+EASI JS
+Copyright (c) 2026 Xinonix Interactive Development, Inc.
+
+Licensor-owned EASI JS code and accompanying EASI JS documentation are
+distributed under the EASI JS Community License in LICENSE. That license
+supersedes conflicting legacy proprietary boilerplate in Licensor-owned
+material. It does not replace or restrict the original grants for the
+third-party components identified below.
+
+This inventory is informational and does not modify any license. Preserve
+the applicable copyright notices and license texts when redistributing the
+corresponding components, including within a compiled or bundled application.
+
+BUNDLED THIRD-PARTY SOURCE
+
+1. JPEG decoder: src/codecs/decoders/JpegDecoder.js
+
+   Copyright 2011 notmasteryet
+   Apache License, Version 2.0: licenses/Apache-2.0.txt
+
+   Source lineage: https://github.com/jpeg-js/jpeg-js
+   The upstream jpeg-js distribution also supplies this notice:
+   Copyright (c) 2014, Eugene Ware
+   All rights reserved.
+   BSD 3-Clause terms: licenses/jpeg-js-BSD-3-Clause.txt
+
+   EASI integrates this decoder through an ES module/class wrapper. The
+   imported decoder is a modified copy, not an unmodified upstream release.
+   The existing upstream Apache notice is retained in the source. No upstream
+   release number is asserted for this vendored copy.
+
+2. Lossless JPEG decoder: src/codecs/decoders/internal/JpegLosslessCore.js
+
+   Copyright (c) 2015 RII-UTHSCSA
+   MIT terms: licenses/jpeg-lossless-decoder-js-MIT.txt
+   Source: https://github.com/rii-mango/JPEGLosslessDecoderJS
+
+   EASI vendors the JavaScript decoder core and integrates it through its own
+   decoder wrapper. No upstream release number is asserted for this copy.
+
+OPTIONAL CODEC PROVIDERS AND DEMO DEPENDENCIES
+
+EASI JS has no required npm runtime dependencies. Codec implementations
+supplied by applications keep their own licenses. The development/demo
+environment uses the following packages separately; their runtime files are
+not included in the EASI archive or relicensed under its Community License.
+The OpenJPEG texts below are included for reference when using that provider.
+
+@voxelmed/openjpegjs (OpenJPEG JavaScript/WebAssembly runtime)
+   Copyright (c) 2020 Chris Hafey
+   MIT terms: licenses/openjpegjs-MIT.txt
+   Source: https://github.com/VoxelMed/openjpegjs
+   Its underlying OpenJPEG implementation has BSD 2-Clause terms and the
+   copyright notices reproduced in licenses/OpenJPEG-BSD-2-Clause.txt.
+   Source: https://github.com/uclouvain/openjpeg
+
+node-fetch (development/demo HTTP client)
+   MIT terms; see node-fetch/LICENSE.md in the installed dependency.
+   Source: https://github.com/node-fetch/node-fetch
+   Its separately installed dependencies (data-uri-to-buffer, fetch-blob,
+   formdata-polyfill, node-domexception, and web-streams-polyfill) also supply
+   their own MIT notices. Preserve those notices when bundling those packages.
+
+Applications that supply additional JPEG-LS, HTJ2K, OCR, or other optional
+runtime modules are responsible for preserving those modules' own notices.
+Those application-supplied modules are not included in the EASI JS archive.
+
+UPSTREAM LICENSE TEXT SOURCES
+
+https://www.apache.org/licenses/LICENSE-2.0.txt
+https://github.com/jpeg-js/jpeg-js/blob/master/LICENSE
+https://github.com/rii-mango/JPEGLosslessDecoderJS/blob/master/LICENSE
+https://github.com/VoxelMed/openjpegjs/blob/master/LICENSE
+https://github.com/uclouvain/openjpeg/blob/master/LICENSE
+
+DICOM is a registered trademark of the National Electrical Manufacturers
+Association. FHIR is a registered trademark of Health Level Seven
+International. These names identify supported standards; no endorsement is
+implied.

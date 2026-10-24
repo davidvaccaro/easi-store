@@ -1,0 +1,35 @@
+{
+  "name": "@xinonix/easi-store",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "A self-hosted imaging archive built with EASI JS and EASI View.",
+  "author": "Xinonix Interactive Development, Inc.",
+  "license": "SEE LICENSE IN LICENSE",
+  "repository": { "type": "git", "url": "git+https://github.com/davidvaccaro/easi-store.git" },
+  "engines": { "node": "24.x" },
+  "scripts": {
+    "start": "node src/cli.js start",
+    "dev": "node scripts/build.mjs && node src/cli.js start --open",
+    "build": "node scripts/build.mjs",
+    "test": "node --test test/*.test.js scripts/package-portable.test.mjs",
+    "typecheck": "tsc --noEmit",
+    "source:check": "node scripts/check-source.mjs",
+    "check": "npm run source:check && npm test && npm run typecheck && npm run build && node scripts/check-dist.mjs",
+    "demo": "node src/cli.js demo",
+    "doctor": "node src/cli.js doctor",
+    "artifact:pack": "node scripts/package-portable.mjs"
+  },
+  "dependencies": {
+    "@xinonix/easi-js": "1.0.1",
+    "@xinonix/easi-view": "1.0.0-rc.1",
+    "react": "19.3.1",
+    "react-dom": "19.3.1"
+  },
+  "devDependencies": {
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
+    "esbuild": "0.28.2",
+    "typescript": "7.0.2"
+  }
+}

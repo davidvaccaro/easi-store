@@ -1,0 +1,221 @@
+EASI JS COMMUNITY LICENSE
+Version 1.0
+
+Licensor: Xinonix Interactive Development, Inc.
+Commercial licensing enquiries: dvaccaro@xinonix.com
+Copyright (c) 2026 Xinonix Interactive Development, Inc.
+Community revenue threshold: USD 5,000,000.
+
+This is a source-available license, not an OSI-approved open-source license.
+Eligible individuals, research institutions, nonprofit organizations, and
+businesses may use the Software without a license fee as described below.
+Other use requires a separate commercial license from the Licensor.
+
+1. COVERED SOFTWARE
+
+"Software" means the Licensor-owned EASI JS source code and accompanying
+EASI JS documentation that the Licensor expressly distributes under this
+license, including Licensor-owned portions incorporated into modified versions.
+This license does not cover third-party components, sample or patient data,
+external tools, trademarks, EASI Studio, other language implementations, or
+separately licensed specification material. Each excluded item requires its
+own applicable rights. Third-party software remains under its original terms.
+
+"You" means the individual or legal entity exercising rights under this license.
+Use in employment or contracting is use by the organization for which the work
+is performed, rather than personal use by its employee or contractor.
+
+"Organization Group" means You and all entities that directly or indirectly
+control You, are controlled by You, or are under common control with You.
+"Control" means more than 50 percent of voting power or ownership, or the power
+to direct management through ownership, contract, or equivalent arrangements.
+
+"Annual Gross Revenue" means the Organization Group's consolidated worldwide
+revenue from all activities in its most recently completed fiscal year,
+eliminating intercompany transactions, before expenses or taxes. If no fiscal
+year has been completed, use actual revenue since formation. Investment
+proceeds and loan principal are not revenue. Use a consistently applied annual
+average exchange rate from a recognized financial reporting source to convert
+other currencies to US dollars. Revenue means the whole group's revenue, not
+only revenue attributable to EASI JS, and is not profit, valuation, or funding.
+Following a change of control, assess the newly composed group immediately
+using each member's most recent completed fiscal-year revenue, or actual
+revenue since formation if none has been completed. Use consolidated amounts
+where available and eliminate revenue already counted and intercompany
+transactions, including when members have different fiscal year-end dates.
+
+2. COMMUNITY ELIGIBILITY
+
+You may exercise the rights in Section 3 without a license fee when at least
+one of the following applies:
+
+(a) You are an individual acting for yourself for personal, educational,
+    noncommercial, or independent research purposes, rather than performing
+    work for an organization that is not eligible under this section.
+
+(b) You are a recognized public or nonprofit academic institution or public
+    research institution not controlled by a for-profit organization, using
+    the Software for your own education, research, or public-interest
+    activities. An independent research grant does not by
+    itself remove eligibility. Operating or developing a noneligible
+    organization's business systems as an outsourced service does not qualify
+    under this research exception.
+
+(c) You are a bona fide nonprofit organization recognized under applicable
+    law, organized for charitable, scientific, educational, healthcare, or
+    other public-benefit purposes, that does not distribute profits to private
+    owners and is not controlled by a for-profit organization. This exception
+    is not subject to a revenue limit and covers your own legitimate activities.
+
+(d) Your Organization Group has Annual Gross Revenue strictly below
+    USD 5,000,000. This permission includes commercial use, development,
+    internal deployment, and products or services operated by your group.
+    There is no employee, contractor, funding, or valuation limit.
+
+Eligibility is assessed when use begins, at each fiscal year-end, and whenever
+control changes. Loss of revenue eligibility takes effect on the fiscal
+year-end when that year's Annual Gross Revenue is at or above the threshold;
+use reasonably available accounting records, and do not postpone assessment
+until audited statements are issued. Loss of eligibility following a control
+change takes effect on that change's closing date. A contractor may exercise
+rights solely for an eligible
+client's work under that client's eligibility, even if the contractor itself
+would not qualify. Each client must qualify or hold an applicable commercial
+license. Creating a small subsidiary or using an intermediary does not make
+a noneligible Organization Group eligible.
+
+3. COPYRIGHT AND PATENT GRANTS
+
+While eligible and complying with this license, You receive a worldwide,
+nonexclusive, royalty-free license to use, run, reproduce, inspect, modify,
+and distribute the Software for your permitted purposes, including in your
+own proprietary products. You own your original modifications; no assignment
+of your intellectual property or disclosure of your separate application code
+is required. Licensor-owned portions remain subject to this license.
+
+The Licensor also grants a worldwide, nonexclusive, royalty-free patent license
+to make, use, and distribute the covered Software under patent claims the
+Licensor has authority to license that are necessarily infringed by the covered
+Software as supplied. This does not grant rights to unrelated combinations,
+independent modifications, or third-party patents. If You initiate patent
+litigation alleging infringement by the covered Software, this patent grant
+terminates upon filing that claim.
+
+These grants last for the covered version unless eligibility ends under
+Section 6 or the license terminates under Section 8. Changes to future license
+versions do not amend this license for a copy already received under it.
+
+4. DISTRIBUTION AND DOWNSTREAM USE
+
+When distributing the Software, including within a compiled or bundled product,
+include this license and preserve applicable copyright and third-party notices.
+Identify material modifications. Do not present a modified version as an
+unmodified official release or remove the eligibility conditions from
+Licensor-owned portions. You may distribute copies to any recipient, but
+distribution does not authorize that recipient's use beyond its own license.
+
+Recipients receive any applicable rights directly under this license and must
+independently qualify, or obtain a commercial license, to use the Software.
+You cannot sublicense Licensor-owned portions under unrestricted terms.
+An ineligible customer receiving and running an embedded copy requires a
+commercial license covering that use, including an appropriate OEM agreement
+where offered by the Licensor.
+
+Receiving output from an eligible organization's hosted product or service
+does not, by itself, make the recipient a user of the Software. The operator
+must qualify or hold a commercial license. An operator cannot rely on its own
+eligibility to deploy or administer the Software within an ineligible client's
+systems or to supply a dedicated outsourced EASI JS installation for that client.
+For this purpose, a dedicated outsourced installation means an installation
+in a client-controlled environment or one operated as the client's agent for
+its internal use rather than under the operator's standard hosted-service
+offering. An isolated tenant in such a standard hosted offering is not, by
+itself, a dedicated outsourced installation.
+
+5. OUTPUTS AND EVALUATION
+
+This license does not impose revenue restrictions, fees, disclosure duties,
+or notice requirements on data, images, documents, or other outputs merely
+because they were processed by the Software. It grants no rights in input data
+or third-party material contained in an output. Copies of the Software within
+an output remain Software subject to the applicable license.
+
+An otherwise ineligible Organization Group may inspect and evaluate the
+Software for up to 30 consecutive days per major Software version solely in
+a nonproduction environment. This exception permits testing and internal
+evaluation, not production use, paid services, or distribution. The period
+starts on its first execution of that major version and cannot be restarted
+by using another affiliate, contractor, or minor version.
+For this limited exception, the Organization Group is temporarily eligible
+for the Section 3 copyright and patent grants solely to inspect, reproduce,
+run, and modify the Software as necessary for that internal evaluation.
+Evaluation permissions expire after the 30-day period; expiration does not
+trigger the 90-day transition in Section 6.
+
+6. LOSS OF ELIGIBILITY
+
+If You cease to qualify after lawful community use, including through growth
+or acquisition, You have 90 days from the eligibility change to obtain an
+appropriate commercial license or cease using and distributing the Software.
+The eligibility change date is the fiscal year-end or control-change closing
+date specified in Section 2, or the date an applicable institutional or
+nonprofit qualification ends.
+During that transition, previously permitted use may continue under these
+terms. After the transition, this license's copyright and patent permissions
+end for Your otherwise ineligible use. You may retain one inactive archival
+copy for records or legal obligations. Independently eligible recipients'
+licenses and rights in generated outputs are not terminated by Your change.
+
+7. COMMERCIAL ALTERNATIVE AND RESERVED RIGHTS
+
+An Organization Group at or above USD 5,000,000 Annual Gross Revenue that
+does not qualify for an exception requires a separate written commercial
+license for use beyond the evaluation or transition permissions above.
+The Licensor may also offer OEM, distribution, support, or other agreements.
+No commercial license arises merely by requesting a quote or making an
+unspecified payment.
+
+The Licensor retains ownership of its Software. No trademark endorsement,
+support, maintenance, certification, or rights not expressly granted are
+included. Fair use and other rights that cannot lawfully be limited remain
+unaffected. This license applies only to rights the Licensor can grant.
+
+8. BREACH AND TERMINATION
+
+Permissions terminate if You materially breach this license and do not cure
+the breach within 30 days after written notice identifying it. Cure requires
+ending unauthorized use and correcting affected distributions where reasonably
+practicable. A first breach timely cured does not terminate the license.
+The eligibility transition in Section 6 is governed by its separate deadline;
+it is not extended by this breach provision.
+
+On termination, cease use and distribution except where independently
+authorized, and delete or stop using active Software copies. You may retain
+an inactive archival copy for legal obligations. Sections concerning ownership,
+third-party rights, outputs, notices, disclaimers, and liability survive.
+Termination of Your license does not terminate an independently compliant
+recipient's direct license.
+
+9. WARRANTIES AND LIABILITY
+
+TO THE MAXIMUM EXTENT PERMITTED BY APPLICABLE LAW, THE SOFTWARE IS PROVIDED
+"AS IS" AND "AS AVAILABLE", WITHOUT WARRANTIES OF ANY KIND, INCLUDING
+MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE, NON-INFRINGEMENT,
+ACCURACY, SECURITY, OR UNINTERRUPTED OPERATION. NO CLAIM OF CLINICAL,
+REGULATORY, ANONYMIZATION, OR STANDARDS CERTIFICATION IS MADE BY THIS LICENSE.
+
+TO THE MAXIMUM EXTENT PERMITTED BY APPLICABLE LAW, THE LICENSOR AND ITS
+CONTRIBUTORS ARE NOT LIABLE FOR DIRECT, INDIRECT, SPECIAL, INCIDENTAL,
+CONSEQUENTIAL, OR PUNITIVE DAMAGES, OR LOSS OF DATA, PROFITS, OR BUSINESS,
+ARISING FROM THE SOFTWARE OR THIS LICENSE, UNDER ANY THEORY OF LIABILITY.
+NOTHING EXCLUDES LIABILITY THAT APPLICABLE LAW DOES NOT PERMIT TO BE EXCLUDED.
+
+10. INTERPRETATION
+
+If a provision is unenforceable, the remaining provisions continue to the
+extent permitted by law. No waiver is implied by failure to enforce a term.
+This license governs the covered Licensor-owned Software and supersedes
+conflicting legacy proprietary boilerplate in that covered material; it does
+not override third-party license terms. Only a separate agreement signed by
+the Licensor can grant different rights. This license does not license a
+contributor's separate material unless that contributor has authorized it.

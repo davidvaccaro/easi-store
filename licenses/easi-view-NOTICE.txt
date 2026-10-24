@@ -1,0 +1,29 @@
+EASI View
+Copyright (c) 2026 Xinonix Interactive Development, Inc.
+
+Licensor-owned EASI View source and documentation are distributed under the
+EASI View Community License in LICENSE. Commercial enquiries:
+dvaccaro@xinonix.com. This is a source-available project.
+
+The application uses @xinonix/easi-js 1.0.1-corpus.0 under the EASI JS Community License.
+Builds preserve its LICENSE, NOTICE, and third-party license texts in licenses/.
+Those independent terms continue to apply to the corresponding components.
+EASI JS includes JPEG and lossless JPEG components with separate upstream
+notices. Their original grants are not replaced by the EASI View license.
+
+esbuild is a development-only build tool under its own MIT license; it is not
+part of the browser application runtime.
+
+The viewer's rendering engine, frame scheduler, cache, interactions, and
+application are independently implemented here. No external viewer engine
+is required. Demo images are generated synthetic data, not patient records.
+
+DICOM is a registered trademark of the National Electrical Manufacturers
+Association. Its use here identifies the standard and implies no endorsement.
+
+Compressed pixel decoding also uses jpeg-js (BSD / Apache notices) and the
+pinned dcmjs-codecs native WASM binary (MIT wrapper and independently licensed
+codec libraries). This software is based in part on the work of the Independent
+JPEG Group. Full notices and binary provenance are in licenses/codecs/.
+The dcmjs-codecs JavaScript toolkit is used for builds and synthetic tests only;
+EASI JS remains the viewer runtime DICOM pipeline.

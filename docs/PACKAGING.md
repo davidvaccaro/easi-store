@@ -1,0 +1,101 @@
+# Installation and packaging
+
+The first preview offers three installation paths. They all run the same server and use a separate persistent archive directory.
+
+| Path | What the user needs | First action |
+| --- | --- | --- |
+| Docker Compose | Docker Engine/Desktop + Compose | `docker compose up --build -d` |
+| Source launcher | Node.js 24, npm, source checkout | Open the platform launcher in `scripts/` |
+| Portable runtime bundle | Extract the correct OS/CPU package | Open `Start EASI Store` |
+
+A portable package is not a signed operating-system installer. The preview includes an actual portable packaging pipeline; macOS notarization, Windows signing/MSI, Linux desktop package integration, and managed-service installation are separate qualification work. Only report a platform as tested after its native smoke test has run.
+
+## Docker
+
+```sh
+docker compose up --build -d
+```
+
+Compose publishes HTTP on **127.0.0.1:8048** and DIMSE on **127.0.0.1:4248**, uses a persistent named volume, runs the server as a non-root user, and enables a minimal healthcheck. The container's internal listeners bind all container interfaces so host port forwarding works. Its root filesystem is read-only; `/data` and the temporary mount are writable. On first setup, retrieve the bootstrap token with `docker compose exec store cat /data/bootstrap-token` if requested by the UI.
+
+To build without Compose:
+
+```sh
+docker build --tag easi-store:0.1.0-preview .
+docker volume create easi-store-archive
+docker run --rm --init --name easi-store \
+  --publish 127.0.0.1:8048:8048 \
+  --publish 127.0.0.1:4248:4248 \
+  --mount source=easi-store-archive,target=/data \
+  easi-store:0.1.0-preview
+```
+
+This builds an image locally. No Docker Hub/GHCR image publication is implied. The image recipe follows the Node 24 base image; a qualified release should additionally record the resolved base-image digest and scan the image it actually publishes.
+
+## Source launchers
+
+- macOS: `scripts/launch-macos.command`.
+- Windows: `scripts\launch-windows.cmd`.
+- Linux: `sh scripts/launch-linux.sh` (or mark it executable in a file manager).
+
+The launchers check for Node 24, install locked npm dependencies and build the UI when missing, then start the loopback service and open the browser. The first source launch needs internet access. They prefer a bundled `runtime/` when present, and use the operating system's application-data location for the archive. Set `EASI_STORE_DATA_DIR` and/or `EASI_STORE_PORT` before launching to override those choices. They never ask for administrator/root rights or install a background service.
+
+Keep the terminal window open while using Store. Control-C stops the server. If macOS refuses to execute an unsigned downloaded script, use Terminal to inspect and run the launcher; do not globally disable Gatekeeper.
+
+## Create a portable package
+
+From a built checkout:
+
+```sh
+npm ci
+npm run check
+npm run artifact:pack -- --bundle-runtime
+node scripts/package-smoke.mjs --latest
+```
+
+The current OS and CPU architecture are selected by default. The runtime is pinned to **Node 24.22.1**, the reviewed Node 24 security release for this preview. Override it only with an exact published release after reviewing its support/security status:
+
+```sh
+npm run artifact:pack -- --bundle-runtime \
+  --target darwin-arm64 --node-version 24.22.1 \
+  --output /absolute/path/to/release-artifacts
+```
+
+Recognized targets are `darwin-arm64`, `darwin-x64`, `linux-arm64`, `linux-x64`, `win32-arm64`, and `win32-x64`. Recognition means the packager knows the official Node distribution name; it is not evidence that Store has passed native tests on all six targets. The workflow builds on macOS, Windows, and Linux; review each run and actual CPU architecture before publishing its outputs.
+
+The packager:
+
+1. Requires an existing built UI and release/legal inputs.
+2. Copies an allowlist of application, built assets, documentation, and license files into a clean temporary directory.
+3. Runs `npm ci --omit=dev --ignore-scripts` against the lockfile there. It never copies a developer's installed modules or local archive.
+4. With `--bundle-runtime`, downloads an exact Node 24 distribution and `SHASUMS256.txt` from `https://nodejs.org/dist/vVERSION/`, verifies SHA-256 before extracting it, and retains its licenses.
+5. Adds a platform entry launcher, a file/hash inventory in `ARTIFACT.json`, and the runtime source/version/checksum when bundled.
+6. Creates a `.tar.gz` for macOS/Linux or `.zip` for Windows, plus a SHA-256 sidecar. Existing artifacts are not silently replaced.
+
+The runtime checksum is verified against the official manifest fetched over HTTPS. This preview does not claim independent verification of Node's release-signature chain. A signed release pipeline should add that trust step and artifact provenance.
+
+The smoke check extracts a package created by this build, verifies its complete file inventory and runtime version, and runs its actual entry launcher with no system Node on `PATH`. It creates an isolated synthetic archive, imports 12 demo instances, restarts the service, and checks persisted counts. Run it only on your trusted current-platform artifact. It is not a general-purpose sandbox for untrusted downloads.
+
+Without `--bundle-runtime`, an artifact ends in `-requires-node24`; its user must install Node 24. A runtime bundle includes production dependencies, so normal startup needs neither npm installation nor an internet connection. Source/test/build tools are not required to run it.
+
+Cross-target packaging is refused if production dependencies contain native `.node` modules; build on the target platform instead. Current dependencies are expected to remain portable JavaScript/WebAssembly. Creating Windows zip files on another OS also needs `zip`/`unzip`; native Windows uses its installed `tar` and PowerShell archive support.
+
+## Verify and run an artifact
+
+Compare the downloaded archive against the publisher's independently supplied checksum, then extract it outside any archive/data directory. Choose the matching OS and architecture, and open the root **Start EASI Store** launcher. The service's data is stored in your application-data directory and survives replacing the extracted application folder.
+
+On macOS/Linux:
+
+```sh
+shasum -a 256 easi-store-*.tar.gz
+```
+
+On Windows PowerShell:
+
+```powershell
+Get-FileHash .\easi-store-*.zip -Algorithm SHA256
+```
+
+`ARTIFACT.json` records build contents and runtime provenance. A checksum detects mismatches; it does not establish who published the artifact unless you trust the source of the expected checksum.
+
+The manually triggered `.github/workflows/portable.yml` workflow tests, builds, and uploads candidate packages. It does not create a GitHub release, publish an npm/Docker package, or sign an installer. Those publication steps need a qualified release and an explicit publication decision.

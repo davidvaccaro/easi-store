@@ -1,0 +1,13 @@
+EASI Store 0.1.0 preview
+Copyright (c) 2026 Xinonix Interactive Development, Inc.
+
+Independently implemented imaging archive built with EASI JS and EASI View.
+This product is source-available under the EASI Store Community License,
+not an OSI-approved open-source license. Third-party components retain
+their own licenses. EASI View 1.0.0-rc.1 is a release candidate.
+
+DICOM is the registered trademark of the National Electrical Manufacturers
+Association for its standards publications relating to digital communications
+of medical information. This project is not endorsed by NEMA or Orthanc.
+
+See licenses/ and the SDK distribution notices for dependency terms.

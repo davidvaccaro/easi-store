@@ -1,0 +1,17 @@
+.git
+.github
+node_modules
+dist
+artifacts
+coverage
+.DS_Store
+*.log
+*.dcm
+*.dicom
+**/DICOMDIR
+**/dicomdir
+data
+.easi-store
+.env*
+*.pem
+*.key

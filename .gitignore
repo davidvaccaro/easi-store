@@ -1,0 +1,17 @@
+node_modules/
+dist/
+artifacts/
+.data/
+data/
+*.sqlite*
+*.dcm
+*.dicom
+*.DCM
+*.tgz
+*.zip
+.env*
+!.env.example
+.DS_Store
+coverage/
+*.log
+IMPLEMENTATION_CONTRACT.md
