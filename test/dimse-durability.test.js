@@ -1,3 +1,5 @@
+import { join } from 'node:path';
+import { tmpdir } from 'node:os';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtemp, rm } from 'node:fs/promises';
@@ -7,7 +9,7 @@ import { StorageScp } from '../src/dimse/StorageScp.js';
 import { createDicom } from './fixtures/synthetic.js';
 
 test('C-STORE response stays pending while durable persistence has not completed', { timeout: 10000 }, async t => {
-  const dataDir = await mkdtemp('/private/tmp/easi-store-durability-test-');
+  const dataDir = await mkdtemp(join(tmpdir(), 'easi-store-durability-test-'));
   const archive = await Archive.open({ dataDir });
   let release, started;
   const gate = new Promise(resolve => { release = resolve; });

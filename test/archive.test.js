@@ -4,13 +4,13 @@ import { mkdtemp, mkdir, rm, readFile, readdir, writeFile } from 'node:fs/promis
 import { join } from 'node:path';
 import { Readable } from 'node:stream';
 import { createHash } from 'node:crypto';
-import { hostname } from 'node:os';
+import { hostname, tmpdir } from 'node:os';
 import { DatabaseSync } from 'node:sqlite';
 import { Archive } from '../src/archive/Archive.js';
 import { createDicom, uid } from './fixtures/synthetic.js';
 
 async function fixture(t, options = {}) {
-  const dataDir = await mkdtemp('/private/tmp/easi-store-archive-test-');
+  const dataDir = await mkdtemp(join(tmpdir(), 'easi-store-archive-test-'));
   const archive = await Archive.open({ dataDir, ...options });
   t.after(async () => { await archive.close(); await rm(dataDir, { recursive: true, force: true }); });
   return { archive, dataDir };

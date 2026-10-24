@@ -1,3 +1,5 @@
+import { join } from 'node:path';
+import { tmpdir } from 'node:os';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
@@ -10,7 +12,7 @@ import { RelatedReader } from '../src/dicomweb/multipart.js';
 import { createDicom, uid } from './fixtures/synthetic.js';
 
 async function fixture(t, options = {}) {
-  const dataDir = await mkdtemp('/private/tmp/easi-store-web-test-');
+  const dataDir = await mkdtemp(join(tmpdir(), 'easi-store-web-test-'));
   const archive = await Archive.open({ dataDir, ...options });
   const server = createServer(async (req, res) => { if (!await handleDicomweb(req, res, { archive })) { res.writeHead(404); res.end(); } });
   server.listen(0, '127.0.0.1'); await once(server, 'listening');
