@@ -3,6 +3,7 @@ import { cp, mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
+const version = JSON.parse(await readFile(new URL('../package.json', import.meta.url), 'utf8')).version;
 const root = fileURLToPath(new URL('../', import.meta.url));
 process.chdir(root);
 await rm('dist', { recursive: true, force: true });
@@ -28,5 +29,5 @@ async function walk(dir) {
     }
 }
 await walk('dist/public');
-await writeFile('dist/manifest.json', JSON.stringify({ version: '0.1.0', easiJs: '1.0.1', easiView: pkg.version, files }, null, 2) + '\n');
-console.log(`Built EASI Store 0.1.0: ${files.length} public files; independent EASI View SDK ${pkg.version}.`);
+await writeFile('dist/manifest.json', JSON.stringify({ version, easiJs: '1.0.1', easiView: pkg.version, files }, null, 2) + '\n');
+console.log(`Built EASI Store ${version}: ${files.length} public files; independent EASI View SDK ${pkg.version}.`);

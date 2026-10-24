@@ -2,7 +2,7 @@ name: easi-store
 services:
   store:
     build: .
-    image: easi-store:0.1.0-preview
+    image: easi-store:0.2.0-preview
     init: true
     ports:
       - "127.0.0.1:8048:8048"

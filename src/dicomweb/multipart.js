@@ -13,6 +13,18 @@ export class RelatedReader {
     this.bytes = 0;
     this.maxBytes = maxBytes;
     this.maxParts = maxParts;
+    this.closePromise = null;
+  }
+  // Outbound WADO clients call this in finally to cancel an unread peer body.
+  // It is explicit: a rejected STOW part must still be drained to its sibling.
+  close() {
+    if (!this.closePromise) {
+      this.done = true;
+      this.finished = true;
+      this.buffer = Buffer.alloc(0);
+      this.closePromise = Promise.resolve().then(() => this.iterator.return?.());
+    }
+    return this.closePromise;
   }
   async fill() {
     if (this.done) return false;

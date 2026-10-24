@@ -21,13 +21,13 @@ Compose publishes HTTP on **127.0.0.1:8048** and DIMSE on **127.0.0.1:4248**, us
 To build without Compose:
 
 ```sh
-docker build --tag easi-store:0.1.0-preview .
+docker build --tag easi-store:0.2.0-preview .
 docker volume create easi-store-archive
 docker run --rm --init --name easi-store \
   --publish 127.0.0.1:8048:8048 \
   --publish 127.0.0.1:4248:4248 \
   --mount source=easi-store-archive,target=/data \
-  easi-store:0.1.0-preview
+  easi-store:0.2.0-preview
 ```
 
 This builds an image locally. No Docker Hub/GHCR image publication is implied. The image recipe follows the Node 24 base image; a qualified release should additionally record the resolved base-image digest and scan the image it actually publishes.
@@ -61,7 +61,7 @@ npm run artifact:pack -- --bundle-runtime \
   --output /absolute/path/to/release-artifacts
 ```
 
-Recognized targets are `darwin-arm64`, `darwin-x64`, `linux-arm64`, `linux-x64`, `win32-arm64`, and `win32-x64`. Recognition means the packager knows the official Node distribution name; it is not evidence that Store has passed native tests on all six targets. The [native macOS, Windows, and Linux matrix passed](https://github.com/davidvaccaro/easi-store/actions/runs/40103493426) on 2026-10-24, including the 27-test suite and actual runtime-bundled launcher smoke checks. Local macOS ARM64 packaging also passed. See [validation evidence](VALIDATION.md), and review the exact run and actual CPU architecture before publishing a candidate.
+Recognized targets are `darwin-arm64`, `darwin-x64`, `linux-arm64`, `linux-x64`, `win32-arm64`, and `win32-x64`. Recognition means the packager knows the official Node distribution name; it is not evidence that Store has passed native tests on all six targets. The historical **0.1.0** [native macOS, Windows, and Linux matrix passed](https://github.com/davidvaccaro/easi-store/actions/runs/40103493426) on 2026-10-24, including its 27-test suite and actual runtime-bundled launcher smoke checks. Local macOS ARM64 baseline packaging also passed. Those results do not certify a changed 0.2.0 package. See [candidate-specific validation evidence](VALIDATION.md), and review the exact run and actual CPU architecture before publishing a candidate.
 
 The packager:
 

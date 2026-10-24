@@ -18,13 +18,17 @@ The source, tests, and runtime capabilities determine what has actually shipped;
 
 ## Phase 2 — everyday PACS interoperability
 
-- Broader DIMSE Verification/Storage interoperability and outgoing SCU workflows, retaining success acknowledgment only after durable commit.
-- Query/Retrieve roles: C-FIND, C-MOVE, C-GET; explicit Patient/Study Root profiles, move destination configuration, peer diagnostics, cancellation, and network/TLS limits.
-- QIDO matching/return keys, pagination, consistent ordering, meaningful connection diagnostics, and broader client interoperability.
-- Complete metadata services and frames/bulk-data retrieval before relying on them in viewer integration.
-- Support required/default transfer syntaxes and negotiated conversion deliberately; preserve original representations and provenance.
-- Instance/series thumbnails and lazy series viewing; large studies remain responsive and bounded.
-- Endpoint/source management and connection testing; durable queued operations with restart/retry/cancellation behavior.
+**Implemented in the 0.2.0 preview, within the published profiles:**
+
+- DIMSE Verification/Storage receiving and outgoing SCU workflows, preserving encoded datasets and acknowledging receiving only after durable commit.
+- Study Root / Patient Root C-FIND, C-GET, and configured-destination C-MOVE SCPs, Storage role negotiation, cancellation, pending/final/sub-operation statuses, and failure lists. Configured transfer jobs use hierarchical Study Root enumeration and durable C-GET SCU; remote C-MOVE initiation remains future work.
+- Expanded QIDO indexed matching/return keys, comma/repeated `includefield`, pagination and stable ordering.
+- Nested JSON dataset metadata and protected referenced values; supported native/original-compressed frame retrieval with explicit resource/fragment limits.
+- Native little-endian frame/word conversion. Whole-instance conversion and compressed transcoding remain unimplemented; stored representations remain preserved.
+- Bounded instance/series management thumbnails and independent EASI View connection integration. Embedded whole-series loading remains limited to its current 128 MiB / 2,000-frame profile; this is not unlimited study buffering.
+- Named DICOMweb/DIMSE peers, real connection tests, remote search, and persistent queued sends/retrievals with instance checkpoints, restart, manual retry, cancellation, and destination revision guards.
+
+**Continuing interoperability work:** broader independent clients/modalities and negotiated syntax coverage, remote C-MOVE initiation, optional/relational query profiles, better job scheduling/retention and timed retries, larger-study viewer workflow qualification, DICOM TLS, and production network identity. Follow [STATUS.md](STATUS.md), [DICOMWEB.md](DICOMWEB.md), [DIMSE.md](DIMSE.md), and candidate-specific [VALIDATION.md](VALIDATION.md).
 
 EASI JS's existing DIMSE client/receiver support does not automatically provide a production Store SCP. A receiver that acknowledges before persistence must not be used unchanged as a durable archive listener.
 
@@ -42,7 +46,7 @@ EASI JS's existing DIMSE client/receiver support does not automatically provide 
 
 Maintain a versioned conformance matrix against the released normative baseline. Prioritize primary Studies Service completeness before advanced families:
 
-- JSON/XML metadata and metadata-plus-bulk STOW representations.
+- XML metadata and JSON/XML metadata-plus-bulk STOW representations; JSON metadata is implemented in Phase 2 within bounded limits.
 - Rendered resources, content negotiation, transfer syntaxes, frame/bulk behavior, cache/range/error semantics where applicable.
 - Extended query behavior and explicit machine-readable service capabilities.
 - Workitems/UPS and subscriptions; non-patient objects; web storage commitment; scheduled procedure steps/worklist and performed procedure-step services as defined by the adopted edition.

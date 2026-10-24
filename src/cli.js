@@ -13,6 +13,7 @@ import { Archive } from './archive/Archive.js';
 import { Auth } from './http/Auth.js';
 import { StorageScp } from './dimse/StorageScp.js';
 import { createDemoStudy } from './synthetic.js';
+import { VERSION } from './version.js';
 
 export function defaultDataDir() {
     if (process.platform === 'darwin') return path.join(homedir(), 'Library/Application Support/EASI Store');
@@ -24,7 +25,7 @@ function parseArgs(args) {
     while (args.length) {
         const key = args.shift();
         if (['--open', '--no-dimse'].includes(key)) values[key.slice(2)] = true;
-        else if (['--data-dir', '--host', '--port', '--output', '--input', '--dimse-port', '--ae-title', '--public-url', '--label'].includes(key) && args[0] && !args[0].startsWith('--')) values[key.slice(2)] = args.shift();
+        else if (['--data-dir', '--host', '--port', '--output', '--input', '--dimse-port', '--ae-title', '--public-url', '--label', '--credentials-file'].includes(key) && args[0] && !args[0].startsWith('--')) values[key.slice(2)] = args.shift();
         else throw new Error(`Unknown or incomplete option: ${key}`);
     }
     return values;
@@ -46,9 +47,9 @@ export async function main(args = process.argv.slice(2)) {
     const o = parseArgs([...args]);
     const dataDir = path.resolve(o['data-dir'] || process.env.EASI_STORE_DATA_DIR || defaultDataDir());
     if (o.command === 'doctor') {
-        console.log(JSON.stringify({ product: 'EASI Store', version: '0.1.0', node: process.version, platform: process.platform,
+        console.log(JSON.stringify({ product: 'EASI Store', version: VERSION, node: process.version, platform: process.platform,
             architecture: process.arch, dataDir, dataExists: existsSync(dataDir), uiBuilt: existsSync(fileURLToPath(new URL('../dist/public/index.html', import.meta.url))),
-            dicomweb: 'Primary functions preview', dimse: 'C-ECHO / durable C-STORE SCP', productionQualified: false }, null, 2)); return;
+            dicomweb: 'QIDO/STOW/originals + nested metadata/frame/bulk retrieval', dimse: 'C-ECHO / durable C-STORE / C-FIND / C-GET / configured C-MOVE', productionQualified: false }, null, 2)); return;
     }
     if (o.command === 'token') {
         const archive = await Archive.open({ dataDir });
@@ -78,7 +79,7 @@ export async function main(args = process.argv.slice(2)) {
                 await cp(path.join(dataDir, entry.name), path.join(output, entry.name), { recursive: true, errorOnExist: true });
             }
             const files = await inventory(output);
-            await writeFile(path.join(output, 'backup-manifest.json'), JSON.stringify({ product: 'EASI Store', version: '0.1.0', createdAt: new Date().toISOString(), stats: archive.stats(), files }, null, 2), { mode: 0o600 });
+            await writeFile(path.join(output, 'backup-manifest.json'), JSON.stringify({ product: 'EASI Store', version: VERSION, createdAt: new Date().toISOString(), stats: archive.stats(), files }, null, 2), { mode: 0o600 });
             console.log(`Verified offline backup written (${files.length} files). It contains archive data and credentials; keep it private.`);
         } finally { await archive.close(); }
         return;
@@ -87,7 +88,7 @@ export async function main(args = process.argv.slice(2)) {
         if (!o.input) throw new Error('Provide --input with a verified backup directory and --data-dir with a new destination.');
         if (existsSync(dataDir)) throw new Error('Restore destination must not exist.');
         const input = path.resolve(o.input), manifest = JSON.parse(await readFile(path.join(input, 'backup-manifest.json'), 'utf8'));
-        if (manifest.product !== 'EASI Store' || manifest.version !== '0.1.0' || !Array.isArray(manifest.files)) throw new Error('Unsupported backup manifest.');
+        if (manifest.product !== 'EASI Store' || !['0.1.0', VERSION].includes(manifest.version) || !Array.isArray(manifest.files)) throw new Error('Unsupported backup manifest.');
         for (const file of manifest.files) {
             const p = path.resolve(input, file.path);
             if (!p.startsWith(input + path.sep) || (await stat(p)).size !== file.bytes || await fileHash(p) !== file.sha256) throw new Error('Backup integrity verification failed.');
@@ -105,20 +106,29 @@ export async function main(args = process.argv.slice(2)) {
     if (o.command !== 'start') throw new Error('Commands: start, doctor, demo, token, backup, restore.');
     const host = o.host || process.env.EASI_STORE_HOST || '127.0.0.1';
     const port = portNumber(o.port || process.env.EASI_STORE_PORT || 8048, 'HTTP port');
-    const app = await createStoreServer({ dataDir, host, port, publicUrl: o['public-url'] || process.env.EASI_STORE_PUBLIC_URL });
+    const credentialsFile = o['credentials-file'] || process.env.EASI_STORE_CREDENTIALS_FILE;
+    let credentials = {};
+    if (credentialsFile) {
+        const info = await stat(credentialsFile);
+        if (!info.isFile() || info.size > 65536 || process.platform !== 'win32' && (info.mode & 0o077)) throw new Error('Use a private credentials JSON file (owner access only, at most 64 KiB).');
+        credentials = JSON.parse(await readFile(credentialsFile, 'utf8'));
+        if (!credentials || typeof credentials !== 'object' || Array.isArray(credentials)) throw new Error('The credentials file must contain a named credential object.');
+    }
+    const app = await createStoreServer({ dataDir, host, port, publicUrl: o['public-url'] || process.env.EASI_STORE_PUBLIC_URL, credentials });
     let dimse;
     try {
         await app.listen();
         if (!o['no-dimse'] && process.env.EASI_STORE_DIMSE !== 'off') {
             const dimsePort = portNumber(o['dimse-port'] || process.env.EASI_STORE_DIMSE_PORT || 4248, 'DIMSE port');
-            dimse = new StorageScp({ archive: app.archive, auth: app.auth, host, port: dimsePort, aeTitle: o['ae-title'] || process.env.EASI_STORE_AE_TITLE || 'EASISTORE' });
+            dimse = new StorageScp({ archive: app.archive, auth: app.auth, host, port: dimsePort, aeTitle: o['ae-title'] || process.env.EASI_STORE_AE_TITLE || 'EASISTORE',
+                resolveMoveDestination: aeTitle => app.connections.resolveMoveDestination(aeTitle) });
             await dimse.listen(); app.capabilities.dimse.enabled = true;
             app.capabilities.dimse.port = dimsePort; app.capabilities.dimse.aeTitle = dimse.aeTitle;
-            console.log(`DIMSE: ${dimse.aeTitle} on ${host}:${dimsePort} (C-ECHO / durable C-STORE).`);
+            console.log(`DIMSE: ${dimse.aeTitle} on ${host}:${dimsePort} (C-ECHO / durable C-STORE / FIND / GET / MOVE).`);
         }
     } catch (error) { await dimse?.close(); await app.close(); throw error; }
     const url = `http://${host === '0.0.0.0' || host === '::' ? '127.0.0.1' : host.includes(':') ? `[${host}]` : host}:${port}/`;
-    console.log(`EASI Store 0.1.0 preview: ${url}`);
+    console.log(`EASI Store ${VERSION} preview: ${url}`);
     console.log(`Archive data: ${dataDir}`);
     if (!app.auth.record) console.log('Open the browser to create your administrator. Container bootstrap token: <data directory>/bootstrap-token.');
     if (o.open) {

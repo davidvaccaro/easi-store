@@ -175,7 +175,7 @@ export class Archive {
     try { return await operation; } finally { this.operations.delete(operation); }
   }
 
-  async performIngest(readable, { source = 'upload', expectedStudyUid, expectedSopUid, expectedSopClassUid } = {}) {
+  async performIngest(readable, { source = 'upload', expectedStudyUid, expectedSeriesUid, expectedSopUid, expectedSopClassUid } = {}) {
     if (typeof source !== 'string' || !source.length || source.length > 128) throw new ArchiveError('Invalid import source.');
     const spoolName = `${randomUUID()}.partial`;
     const spool = join(this.dataDir, 'spool', spoolName);
@@ -202,6 +202,7 @@ export class Archive {
       finally { await prefix.close(); }
       const metadata = await extractMetadata(spool);
       if (expectedStudyUid && metadata.studyUid !== expectedStudyUid) throw recordError(metadata, 'The uploaded instance does not belong to the requested study.', 'study-mismatch');
+      if (expectedSeriesUid && metadata.seriesUid !== expectedSeriesUid) throw recordError(metadata, 'The uploaded instance does not belong to the requested series.', 'series-mismatch');
       if (expectedSopUid && metadata.sopUid !== expectedSopUid || expectedSopClassUid && metadata.sopClassUid !== expectedSopClassUid) throw recordError(metadata, 'The uploaded dataset does not match its DIMSE command UIDs.', 'command-mismatch');
       const sha256 = hash.digest('hex');
       const record = { ...metadata, id: randomUUID(), patientKey: patientKey(metadata, source), bytes, sha256, objectKey: `${sha256.slice(0, 2)}/${sha256}.dcm`, source, createdAt: new Date().toISOString() };

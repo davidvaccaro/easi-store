@@ -1,6 +1,6 @@
-# Initial DICOMweb profile
+# DICOMweb interoperability preview — 0.2.0
 
-EASI Store starts with the core archive transactions users expect. The target is eventual broad support for the released normative standard, implemented in explicit phases. The 0.1.0 preview is a **documented subset**, not a declaration of full PS3.18 or complete Studies Service conformance.
+EASI Store implements the core archive transactions plus bounded metadata and pixel retrieval. The target is eventual broad support for the released normative standard, implemented in explicit phases. The 0.2.0 preview is a **documented subset**, not a declaration of full PS3.18 or complete Studies Service conformance.
 
 Reference baseline: [DICOM PS3.18, Web Services](https://dicom.nema.org/medical/dicom/current/output/chtml/part18/PS3.18.html), released 2026d when this implementation was started. A future release must pin/review its baseline rather than assume the `current` URL stays unchanged.
 
@@ -8,7 +8,7 @@ Base URL: `http://127.0.0.1:8048/dicomweb`.
 
 ## Transaction matrix
 
-| Transaction/resource | Initial profile |
+| Transaction/resource | 0.2.0 profile |
 | --- | --- |
 | QIDO studies | Supported: `GET /studies` |
 | QIDO series within a study | Supported: `GET /studies/{study}/series` |
@@ -16,9 +16,10 @@ Base URL: `http://127.0.0.1:8048/dicomweb`.
 | STOW binary DICOM | Supported: `POST /studies` and `POST /studies/{study}` with `multipart/related; type="application/dicom"` |
 | WADO original instance | Supported: `GET /studies/{study}/series/{series}/instances/{instance}` |
 | WADO original series/study | Supported as multipart original DICOM retrieval |
-| Complete DICOM JSON metadata endpoint | Planned; QIDO returns selected indexed attributes only |
+| DICOM JSON dataset metadata | Supported: study, series, and instance `/metadata`; nested sequences and functional groups retained within the bounded metadata profile |
 | XML metadata / metadata-plus-bulk STOW | Planned |
-| Frame and bulk-data retrieval | Planned |
+| Selected frames | Supported: instance `/frames/{1-based-frame-list}`; native little-endian output or supported original compressed encoding |
+| Referenced bulk values | Supported: authenticated `BulkDataURI` values returned by metadata, including nested attribute paths |
 | Rendered resources, arbitrary transcoding | Planned |
 | WADO-URI | Planned legacy compatibility |
 | UPS/workitems/subscriptions and other advanced services | Later phases |
@@ -67,6 +68,8 @@ curl --fail-with-body --cookie /tmp/easi-store.cookies \
 
 Results are DICOM JSON datasets containing indexed query attributes, not Store's management JSON records. The preview recognizes keyword or tag-number matching for PatientName, PatientID, StudyInstanceUID, StudyDate, StudyDescription, Modality, SeriesInstanceUID, and SOPInstanceUID. It supports simple `*`/`?` text matching, StudyDate ranges, UID lists, `limit` (1–1000; default 100), and `offset`. `includefield` is limited to indexed keys; `includefield=all` is rejected. Unknown matching fields are rejected rather than silently ignored. Do not assume every optional QIDO key, fuzzy matching, timezone matching, or arbitrary return key is supported. An empty successful query returns an empty JSON array.
 
+Phase 2 also matches `IssuerOfPatientID`, `PatientBirthDate`, `AccessionNumber`, `ModalitiesInStudy`, `SeriesDescription`, `SeriesNumber`, and `InstanceNumber`. Birth/study dates accept ranges. `ModalitiesInStudy` matches modalities present anywhere in the study. `includefield` accepts repeated parameters or comma-separated indexed keywords/tag numbers; it augments the default returned attributes. Results use stable archive ordering and a `Warning` header when additional results are available. The supported QIDO hierarchy is studies → series in a study → instances in a series; do not assume flat all-series/all-instance searches are implemented.
+
 ## Store an original instance
 
 STOW uses MIME parts, not HTML `multipart/form-data`. This Node 24 example streams a local instance without concatenating its pixel data into a second in-memory copy. Authenticate through the browser/command-line flow and supply its cookie value privately through `EASI_STORE_COOKIE`; never put a real token in source control.
@@ -111,6 +114,37 @@ curl --fail-with-body --cookie /tmp/easi-store.cookies \
 ```
 
 The response includes MIME framing. Use a DICOMweb-aware client to extract the DICOM part, or use the library's **Download original** action for a direct `application/dicom` attachment. An archived instance's original transfer syntax is preserved. This preview has no implicit guarantee of conversion to Explicit VR Little Endian or another requested syntax.
+
+## Retrieve metadata, frames, and bulk values
+
+Metadata endpoints return `application/dicom+json` arrays for these scopes:
+
+```text
+GET /studies/{study}/metadata
+GET /studies/{study}/series/{series}/metadata
+GET /studies/{study}/series/{series}/instances/{instance}/metadata
+```
+
+The EASI JS streaming handler extracts dataset attributes, including nested SQ items, enhanced-image functional groups, numeric VR values, and declared supported character sets. This is separate from the small indexed QIDO return set. File Meta Information is not included in dataset JSON. Binary values and large individual values become protected `BulkDataURI` references rather than being decoded or embedded as large JSON values. Existing originals are read on demand; an archive created by 0.1.0 does not need reimporting.
+
+Metadata is bounded to 8 MiB per instance and per response, 100,000 attributes, and sequence depth 64. A metadata response may cover at most 10,000 instances and four metadata responses/readers run concurrently. Larger studies should request individual series or instances. Unsupported encodings, malformed numeric values, or unreadable structures return explicit errors rather than silently incomplete metadata.
+
+Selected frame example:
+
+```sh
+curl --fail-with-body --cookie /tmp/easi-store.cookies \
+  --header 'Accept: multipart/related; type="application/octet-stream"; transfer-syntax=1.2.840.10008.1.2.1' \
+  'http://127.0.0.1:8048/dicomweb/studies/STUDY_UID/series/SERIES_UID/instances/INSTANCE_UID/frames/1,2' \
+  --output frames.multipart
+```
+
+Frame numbers are 1-based; duplicate/out-of-range values are rejected and a request contains at most 1,000 frames. Native data supports 1/8/16/32/64-bit geometry with a 64 MiB per-frame limit. Implicit VR Little Endian and Explicit VR Big Endian native inputs are normalized to little-endian pixel output; this does not transcode the original instance or change its attributes. One-bit frame boundaries are repacked correctly. Native selected frames are concatenated into one octet-stream MIME part.
+
+Original compressed frame retrieval recognizes JPEG, JPEG-LS, JPEG 2000, JPEG 2000 Part 2, HTJ2K, and DICOM RLE transfer syntaxes when frame boundaries are unambiguous. It returns their matching MIME type and original syntax; it does not decode or recompress them. A valid Basic Offset Table is supported. An empty table is supported for a single frame or one fragment per frame; ambiguous multi-fragment/multiframe data is explicitly rejected. Extended-offset-only indexing and video/container formats are not implemented. Fragment count is limited to 100,000 and each encoded frame to 64 MiB. Archival acceptance, original retrieval, selected frame retrieval, and viewer rendering are separate capabilities.
+
+Follow a returned `BulkDataURI` as an authenticated request, rather than constructing arbitrary filesystem paths. Nested bulk references use validated attribute/item paths. Native bulk output uses little-endian numeric words where conversion is required; compressed pixel bulk follows the original frame profile and is limited to 1,000 frames in a whole-pixel-bulk request. For larger multiframe images, request selected frames instead. Neither bulk nor frames are public URLs, and no wildcard CORS policy is enabled. A request for an unsupported media type or transfer syntax returns `406`; malformed data or resource limits return their explicit error status.
+
+`OPTIONS /dicomweb` (or a DICOMweb resource) returns the implementation's JSON capabilities and allowed methods. This describes the preview and does not declare full normative service conformance. Management thumbnail PNGs are documented in [MANAGEMENT_API.md](MANAGEMENT_API.md), not claimed as standard DICOMweb rendered resources.
 
 ## Release criteria
 

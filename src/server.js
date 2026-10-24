@@ -10,31 +10,41 @@ import { handleDicomweb } from './dicomweb/router.js';
 import { Auth, isLoopback } from './http/Auth.js';
 import { json, httpError, readJson } from './http/utils.js';
 import { createDemoStudy } from './synthetic.js';
+import { ConnectionService, handleConnectionRoutes } from './connections/ConnectionService.js';
+import { ThumbnailService } from './thumbnails/ThumbnailService.js';
+import { VERSION } from './version.js';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 const mime = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8',
     '.json': 'application/json', '.svg': 'image/svg+xml', '.png': 'image/png', '.wasm': 'application/wasm', '.txt': 'text/plain; charset=utf-8' };
 export const CAPABILITIES = {
-    name: 'EASI Store', version: '0.1.0', status: 'Foundation preview', standardBaseline: 'DICOM PS3.18 2026d',
+    name: 'EASI Store', version: VERSION, status: 'Phase 2 interoperability preview', standardBaseline: 'DICOM PS3.18 2026d',
     dicomweb: { basePath: '/dicomweb', qido: ['studies', 'series', 'instances'],
         stow: ['multipart/related; type="application/dicom"'], wado: ['original instances', 'original series', 'original studies'],
-        transcoding: false, metadata: false, frames: false, rendered: false, fullConformance: false },
+        transcoding: { completeInstance: false, nativeFrames: 'Little Endian word conversion; original compressed frames preserved' },
+        metadata: ['study', 'series', 'instance'], frames: true, bulkdata: true, rendered: false, fullConformance: false },
     archive: { storage: 'Filesystem with SHA-256 integrity', catalog: 'SQLite WAL',
         duplicates: 'Byte-identical reimports are idempotent; conflicting SOP Instance UIDs are rejected.',
         originalBytesPreserved: true, patientIdentity: 'Patient ID + issuer; missing issuer scoped to source.' },
     security: { localAdmin: true, apiBearerTokens: true, externalIdentity: false },
     viewer: { name: 'EASI View', version: '1.0.0-rc.1', releaseCandidate: true },
-    dimse: { enabled: false, roles: ['C-ECHO SCP', 'C-STORE SCP'], queryRetrieve: false, tls: false },
-    limitations: ['Not stable 1.0 or a qualified clinical system.', 'Full metadata, frames, rendering and transcoding are later DICOMweb milestones.',
-        'PostgreSQL, object storage, OIDC, automatic routing and advanced DIMSE services are planned.']
+    dimse: { enabled: false, roles: ['C-ECHO SCP/SCU', 'C-STORE SCP/SCU', 'C-FIND SCP/SCU', 'C-GET SCP/SCU', 'C-MOVE SCP'],
+        queryRetrieve: ['Study Root', 'Patient Root'], moveDestinations: 'Explicitly configured peers only', tls: false },
+    connections: { configuredPeers: ['dicomweb', 'dimse'], transferJobs: true, restartRecovery: true, retry: true, cancel: true },
+    thumbnails: { managementApi: true, profile: 'Native 8/16-bit monochrome, native 8-bit RGB/YBR, 8-bit baseline JPEG grayscale/YBR' },
+    limitations: ['Not stable 1.0 or a qualified clinical system.', 'Whole-instance transcoding, XML metadata and advanced rendered services are not implemented.',
+        'PostgreSQL, object storage, OIDC, automatic routing, worklists, storage commitment and DICOM TLS are planned.']
 };
 
 export async function createStoreServer(options) {
     const { dataDir, host = '127.0.0.1', port = 8048, publicUrl, maxInstanceBytes = 536870912,
-        staticRoot = path.join(root, 'dist/public') } = options;
+        staticRoot = path.join(root, 'dist/public'), credentials = {} } = options;
     const archive = await Archive.open({ dataDir, maxInstanceBytes });
     let auth;
     try { auth = await new Auth(dataDir).open(); } catch (error) { await archive.close(); throw error; }
+    let connections;
+    try { connections = await ConnectionService.open({ archive, credentials }); } catch (error) { await archive.close(); throw error; }
+    const thumbnails = new ThumbnailService();
     let activeUploads = 0, closing = false;
     const capabilities = structuredClone(CAPABILITIES);
     const allowedHosts = new Set(['localhost', '127.0.0.1', '[::1]']);
@@ -55,6 +65,9 @@ export async function createStoreServer(options) {
             try { requestHost = new URL(`http://${req.headers.host || ''}`).hostname; } catch { throw httpError(400, 'Invalid Host header.'); }
             if (!allowedHosts.has(requestHost)) throw httpError(403, 'This host is not configured. Set an explicit EASI_STORE_PUBLIC_URL to enable it.');
             const method = req.method;
+            const forwardedBase = req.headers['x-easi-store-public-base'];
+            if (forwardedBase !== undefined && forwardedBase !== '/easi-store/dicomweb') throw httpError(400, 'Unsupported public DICOMweb base path.');
+            const publicBasePath = forwardedBase || '/dicomweb';
             const identity = auth.identify(req);
             const mutation = !['GET', 'HEAD', 'OPTIONS'].includes(method);
             if (mutation) {
@@ -63,7 +76,7 @@ export async function createStoreServer(options) {
                 if (origin && origin !== expected) throw httpError(403, 'Cross-origin writes are not allowed.');
                 if (identity !== 'bearer' && req.headers['x-easi-store'] !== '1') throw httpError(403, 'Include the X-EASI-Store: 1 request header.');
             }
-            if (p === '/api/health' && method === 'GET') return json(res, 200, { status: 'ok', version: '0.1.0' });
+            if (p === '/api/health' && method === 'GET') return json(res, 200, { status: 'ok', version: VERSION });
             if (p === '/api/v1/session' && method === 'GET') return json(res, 200, { authenticated: Boolean(identity), setupRequired: !auth.record,
                 bootstrapRequired: !auth.record && !isLoopback(req.socket.remoteAddress) });
             if ((p === '/api/v1/setup' || p === '/api/v1/login') && method === 'POST') {
@@ -77,6 +90,24 @@ export async function createStoreServer(options) {
             }
             if (p === '/api/v1/logout' && method === 'POST') {
                 auth.logout(req); res.setHeader('Set-Cookie', cookie('', req, true)); return json(res, 200, { authenticated: false });
+            }
+            if (p.startsWith('/api/v1/connections') || p.startsWith('/api/v1/jobs')) {
+                if (await handleConnectionRoutes(req, res, { service: connections })) return;
+            }
+            const thumbnail = p.match(/^\/api\/v1\/studies\/([0-9.]+)\/series\/([0-9.]+)(?:\/instances\/([0-9.]+))?\/thumbnail$/);
+            if (thumbnail && method === 'GET') {
+                const records = thumbnail[3] ? [archive.getInstance(thumbnail[1], thumbnail[2], thumbnail[3])].filter(Boolean) : archive.listInstances(thumbnail[1], thumbnail[2]);
+                if (!records.length) throw httpError(404, 'Image not found.');
+                const chosen = records[Math.floor((records.length - 1) / 2)];
+                const record = archive.getInstance(chosen.studyUid, chosen.seriesUid, chosen.sopUid);
+                const frame = Number(requestUrl.searchParams.get('frame') || 1);
+                if (!Number.isSafeInteger(frame) || frame < 1) throw httpError(400, 'Thumbnail frame numbers are 1-based.');
+                const controller = new AbortController();
+                const closed = () => { if (!res.writableEnded) controller.abort(); };
+                res.on('close', closed);
+                try { const png = await thumbnails.render(record, { frame, signal: controller.signal }); res.writeHead(200, { 'Content-Type': 'image/png', 'Content-Length': png.length }); res.end(png); }
+                finally { res.off('close', closed); }
+                return;
             }
             if (p === '/api/v1/summary' && method === 'GET') return json(res, 200, archive.stats());
             if (p === '/api/v1/capabilities' && method === 'GET') return json(res, 200, capabilities);
@@ -113,10 +144,10 @@ export async function createStoreServer(options) {
                         for (const bytes of study) outcomes.push(await archive.ingest(Readable.from([bytes]), { source: 'synthetic-demo' }));
                         return json(res, 201, { imported: outcomes.length, studyUid: outcomes[0].instance.studyUid, summary: archive.stats() });
                     }
-                    if (await handleDicomweb(req, res, { archive, basePath: '/dicomweb' })) return;
+                    if (await handleDicomweb(req, res, { archive, basePath: '/dicomweb', publicBasePath })) return;
                 } finally { activeUploads--; }
             } else if (p === '/dicomweb' || p.startsWith('/dicomweb/')) {
-                if (await handleDicomweb(req, res, { archive, basePath: '/dicomweb' })) return;
+                if (await handleDicomweb(req, res, { archive, basePath: '/dicomweb', publicBasePath })) return;
             }
             if (p.startsWith('/api/') || p.startsWith('/dicomweb')) throw httpError(404, 'Endpoint not found.');
             if (method !== 'GET' && method !== 'HEAD') throw httpError(405, 'Method not allowed.');
@@ -137,7 +168,7 @@ export async function createStoreServer(options) {
         }
     });
     server.on('clientError', (_error, socket) => socket.end('HTTP/1.1 400 Bad Request\r\nConnection: close\r\n\r\n'));
-    return { server, archive, auth, capabilities,
+    return { server, archive, auth, capabilities, connections,
         async listen() {
             await new Promise((resolve, reject) => { server.once('error', reject); server.listen(port, host, () => { server.off('error', reject); resolve(); }); });
             return server.address();
@@ -145,6 +176,8 @@ export async function createStoreServer(options) {
         async close() {
             closing = true;
             if (server.listening) await new Promise(resolve => { server.close(resolve); server.closeIdleConnections(); });
+            await thumbnails.close();
+            await connections.close();
             await archive.close();
         }
     };

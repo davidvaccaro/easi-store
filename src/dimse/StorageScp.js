@@ -1,195 +1,248 @@
-// Independent minimal DICOM Upper Layer / DIMSE receiver. No Orthanc source is used.
-// Success is returned only after Archive.ingest has committed the original and catalog.
+// Independent DICOM Upper Layer / DIMSE server; no PACS implementation is copied.
+// Storage success is sent only after Archive.ingest commits originals and catalog.
 import net from 'node:net';
 import { PassThrough } from 'node:stream';
 import { once } from 'node:events';
+import { setImmediate as nextTurn } from 'node:timers/promises';
 import { part10Header } from '../synthetic.js';
-const verification = '1.2.840.10008.1.1';
-const transferSyntaxes = new Set(['1.2.840.10008.1.2', '1.2.840.10008.1.2.1', '1.2.840.10008.1.2.2',
-    '1.2.840.10008.1.2.4.50', '1.2.840.10008.1.2.4.51', '1.2.840.10008.1.2.4.57',
-    '1.2.840.10008.1.2.4.70', '1.2.840.10008.1.2.4.80', '1.2.840.10008.1.2.4.81', '1.2.840.10008.1.2.4.90',
-    '1.2.840.10008.1.2.4.91', '1.2.840.10008.1.2.5']);
-const u16 = value => { const b = Buffer.alloc(2); b.writeUInt16LE(value); return b; };
-const u32 = value => { const b = Buffer.alloc(4); b.writeUInt32LE(value); return b; };
-const text = value => { const b = Buffer.from(value, 'ascii'); return b.length % 2 ? Buffer.concat([b, Buffer.from([0])]) : b; };
-function commandElement(tag, value) {
-    const b = Buffer.alloc(8); b.writeUInt16LE(0); b.writeUInt16LE(tag, 2); b.writeUInt32LE(value.length, 4);
-    return Buffer.concat([b, value]);
-}
-function commandBytes(elements) {
-    const body = Buffer.concat(elements.map(([tag, value]) => commandElement(tag, value)));
-    return Buffer.concat([commandElement(0, u32(body.length)), body]);
-}
-function decodeCommand(bytes) {
-    const result = new Map(); let i = 0;
-    while (i + 8 <= bytes.length) {
-        if (bytes.readUInt16LE(i) !== 0) throw new Error('Invalid command group.');
-        const length = bytes.readUInt32LE(i + 4), end = i + 8 + length;
-        if (end > bytes.length || result.has(bytes.readUInt16LE(i + 2))) throw new Error('Invalid command element.');
-        result.set(bytes.readUInt16LE(i + 2), bytes.subarray(i + 8, end)); i = end;
-    }
-    if (i !== bytes.length) throw new Error('Incomplete command.');
-    return { field: result.get(0x0100)?.readUInt16LE(), messageId: result.get(0x0110)?.readUInt16LE(),
-        datasetType: result.get(0x0800)?.readUInt16LE(), sopClassUid: result.get(0x0002)?.toString('ascii').replace(/[\0 ]+$/, ''),
-        sopUid: result.get(0x1000)?.toString('ascii').replace(/[\0 ]+$/, '') };
-}
-function item(type, body) { const h = Buffer.alloc(4); h[0] = type; h.writeUInt16BE(body.length, 2); return Buffer.concat([h, body]); }
-function items(bytes, start = 0) {
-    const result = []; let i = start;
-    while (i < bytes.length) {
-        if (i + 4 > bytes.length) throw new Error('Invalid association item.');
-        const length = bytes.readUInt16BE(i + 2); if (i + 4 + length > bytes.length) throw new Error('Invalid association length.');
-        result.push({ type: bytes[i], body: bytes.subarray(i + 4, i + 4 + length) }); i += 4 + length;
-    }
-    return result;
-}
-function pdu(type, body) { const h = Buffer.alloc(6); h[0] = type; h.writeUInt32BE(body.length, 2); return Buffer.concat([h, body]); }
+import { APPLICATION, IMPLEMENTATION, QUERY_MODELS, TRANSFER_SYNTAXES, VERIFICATION, IMPLICIT, EXPLICIT,
+  u16, u32, text, uidValid, item, items, pdu, commandBytes, decodeCommand, send, sendMessage, sendStoredData, sendStoredInstance, dataSetOffset } from './wire.js';
+import { parseIdentifier, encodeIdentifier, queryPlan, matchingGroups, matchingInstances, responseIdentifier } from './query.js';
+export { sendStoredInstance } from './wire.js';
+
 export class StorageScp {
-    constructor({ archive, auth, host = '127.0.0.1', port = 4248, aeTitle = 'EASISTORE', maxConnections = 8 }) {
-        if (!/^[A-Z0-9_ -]{1,16}$/.test(aeTitle)) throw new Error('DIMSE AE title must contain 1–16 uppercase letters, numbers, spaces, _ or -.');
-        this.archive = archive; this.auth = auth; this.host = host; this.port = port; this.aeTitle = aeTitle;
-        this.maxConnections = maxConnections; this.sockets = new Set();
-        this.server = net.createServer(socket => this.accept(socket));
+  constructor({ archive, auth, host = '127.0.0.1', port = 4248, aeTitle = 'EASISTORE', maxConnections = 8,
+    maxQueryResults = 10000, maxRetrieveInstances = 10000, resolveMoveDestination = () => null, associationPolicy = () => true }) {
+    if (!/^[A-Z0-9_ -]{1,16}$/.test(aeTitle)) throw new Error('DIMSE AE title must contain 1–16 uppercase letters, numbers, spaces, _ or -.');
+    if (![maxConnections,maxQueryResults,maxRetrieveInstances].every(value => Number.isInteger(value) && value > 0 && value <= 65535)) throw new Error('Invalid DIMSE operation limits.');
+    if (typeof resolveMoveDestination !== 'function' || typeof associationPolicy !== 'function') throw new Error('DIMSE policies must be functions.');
+    Object.assign(this,{ archive,auth,host,port,aeTitle,maxConnections,maxQueryResults,maxRetrieveInstances,resolveMoveDestination,associationPolicy });
+    this.sockets = new Set(); this.server = net.createServer(socket => this.accept(socket));
+  }
+  async listen() {
+    await new Promise((resolve,reject) => { this.server.once('error',reject); this.server.listen(this.port,this.host,() => { this.server.off('error',reject); resolve(); }); });
+    return this.server.address();
+  }
+  accept(socket) {
+    if (this.sockets.size >= this.maxConnections) { socket.destroy(); return; }
+    this.sockets.add(socket); socket.setTimeout(120000,() => socket.destroy()); socket.on('error',() => {});
+    const context = {contexts:new Map(),associated:false,commandChunks:[],commandBytes:0,store:null,active:null,operation:null,pendingStores:new Map(),peerMax:16384,closed:false,nextMessageId:1};
+    socket.finishedTask = this.receive(socket,context).catch(() => {
+      if (!socket.destroyed) socket.end(pdu(7,Buffer.from([0,0,2,0])));
+    }).finally(async () => {
+      context.closed = true; context.operation?.abort.abort();
+      context.store?.destroy(new Error('DIMSE association closed.'));
+      for (const pending of context.pendingStores.values()) pending.reject(new Error('DIMSE association closed.'));
+      context.pendingStores.clear();
+      if (!socket.destroyed) socket.destroy();
+      await context.operation?.task; this.sockets.delete(socket);
+    });
+  }
+  async receive(socket,context) {
+    let buffer = Buffer.alloc(0);
+    for await (const chunk of socket) {
+      buffer = Buffer.concat([buffer,chunk]);
+      while (buffer.length >= 6) {
+        const type = buffer[0],size = buffer.readUInt32BE(2);
+        if (size > 1024 * 1024) throw new Error('PDU exceeds receive limit.');
+        if (buffer.length < size + 6) break;
+        const body = buffer.subarray(6,size + 6); buffer = buffer.subarray(size + 6);
+        if (type === 1) await this.associate(socket,context,body);
+        else if (type === 4 && context.associated) await this.data(socket,context,body);
+        else if (type === 5 && context.associated && !context.active && !context.operation) { await send(socket,pdu(6,Buffer.alloc(4))); socket.end(); return; }
+        else if (type === 7) return;
+        else throw new Error('Unexpected DIMSE PDU.');
+      }
     }
-    async listen() {
-        await new Promise((resolve, reject) => { this.server.once('error', reject); this.server.listen(this.port, this.host, () => { this.server.off('error', reject); resolve(); }); });
-        return this.server.address();
+    if (buffer.length) throw new Error('Truncated DIMSE PDU.');
+  }
+  async associate(socket,context,body) {
+    if (context.associated || body.length < 68 || body.readUInt16BE(0) !== 1) throw new Error('Invalid association.');
+    const called = body.subarray(4,20).toString('ascii').trim(), calling = body.subarray(20,36).toString('ascii').trim();
+    const allowed = called === this.aeTitle && /^[\x20-\x7e]{1,16}$/.test(calling) && !calling.includes('\\')
+      && await this.associationPolicy({callingAeTitle:calling,calledAeTitle:called,remoteAddress:socket.remoteAddress});
+    if (!allowed) { await send(socket,pdu(3,Buffer.from([0,1,1,7]))); socket.end(); return; }
+    const requestItems = items(body,68), app = requestItems.find(value => value.type === 0x10), responses = [], roles = new Map(), acceptedRoles = [];
+    if (app?.body.toString('ascii') !== APPLICATION) throw new Error('Unsupported application context.');
+    const user = requestItems.find(value => value.type === 0x50);
+    for (const value of user ? items(user.body) : []) {
+      if (value.type === 0x51) { if (value.body.length !== 4) throw new Error('Invalid peer maximum PDU.'); context.peerMax = value.body.readUInt32BE() || 16384; if (context.peerMax < 8) throw new Error('Invalid peer maximum PDU.'); }
+      if (value.type === 0x54) {
+        const length = value.body.length >= 2 ? value.body.readUInt16BE() : 0;
+        if (!length || value.body.length !== length + 4 || value.body[2 + length] > 1 || value.body[3 + length] > 1) throw new Error('Invalid role selection.');
+        const uid = value.body.toString('ascii',2,2 + length); if (roles.has(uid) || !uidValid(uid)) throw new Error('Duplicate or invalid role selection.');
+        roles.set(uid,{scu:!!value.body[2 + length],scp:!!value.body[3 + length],raw:value.body});
+      }
     }
-    accept(socket) {
-        if (this.sockets.size >= this.maxConnections) { socket.destroy(); return; }
-        this.sockets.add(socket); socket.setTimeout(120_000, () => socket.destroy());
-        const context = { contexts: new Map(), associated: false, commandChunks: [], commandBytes: 0, store: null, active: null };
-        const done = this.receive(socket, context).catch(() => {
-            if (!socket.destroyed) socket.end(pdu(7, Buffer.from([0, 0, 2, 0])));
-        }).finally(() => {
-            context.store?.destroy(new Error('DIMSE association closed.'));
-            if (!socket.destroyed) socket.destroy();
-            this.sockets.delete(socket);
-        });
-        socket.on('error', () => {}); socket.finishedTask = done;
+    context.callingAeTitle = calling;
+    const presentationContexts = requestItems.filter(value => value.type === 0x20);
+    if (!presentationContexts.length || presentationContexts.length > 128) throw new Error('Invalid presentation context count.');
+    for (const pc of presentationContexts) {
+      if (pc.body.length < 4) throw new Error('Invalid presentation context.');
+      const id = pc.body[0],inner = items(pc.body,4);
+      if (id % 2 === 0 || context.contexts.has(id)) throw new Error('Invalid context ID.');
+      const abstract = inner.find(value => value.type === 0x30)?.body.toString('ascii'), proposed = inner.filter(value => value.type === 0x40).map(value => value.body.toString('ascii'));
+      const query = QUERY_MODELS.get(abstract), storage = abstract?.startsWith('1.2.840.10008.5.1.4.1.1.');
+      const supported = proposed.filter(ts => (query || abstract === VERIFICATION) ? [IMPLICIT,EXPLICIT].includes(ts) : TRANSFER_SYNTAXES.has(ts));
+      // Explicit LE is a common original encoding and avoids accepting Implicit
+      // first merely because a client offered both in one storage context.
+      const transferSyntax = supported.includes(EXPLICIT) ? EXPLICIT : supported[0];
+      const role = roles.get(abstract) ?? {scu:true,scp:false};
+      const accepted = !!(transferSyntax && (abstract === VERIFICATION || storage || query) && (role.scu || storage && role.scp));
+      context.contexts.set(id,{abstract,transferSyntax,accepted,requestorScu:role.scu,requestorScp:storage && role.scp,query});
+      responses.push(item(0x21,Buffer.concat([Buffer.from([id,0,accepted ? 0 : transferSyntax ? 3 : 4,0]),item(0x40,Buffer.from(transferSyntax || proposed[0] || IMPLICIT))])));
+      if (accepted && storage && roles.has(abstract) && !acceptedRoles.some(value => value.uid === abstract)) acceptedRoles.push({uid:abstract,raw:role.raw});
     }
-    async send(socket, bytes) {
-        if (socket.destroyed) throw new Error('Association closed.');
-        if (!socket.write(bytes)) await new Promise((resolve, reject) => {
-            const cleanup = () => { socket.off('drain', drained); socket.off('close', closed); socket.off('error', errored); };
-            const drained = () => { cleanup(); resolve(); };
-            const closed = () => { cleanup(); reject(new Error('Association closed.')); };
-            const errored = error => { cleanup(); reject(error); };
-            socket.once('drain', drained); socket.once('close', closed); socket.once('error', errored);
-            if (socket.destroyed) closed();
-        });
+    const maximum = Buffer.alloc(4); maximum.writeUInt32BE(1024 * 1024);
+    const userInfo = item(0x50,Buffer.concat([item(0x51,maximum),item(0x52,Buffer.from(IMPLEMENTATION)),item(0x55,Buffer.from('EASI_STORE_020')),...acceptedRoles.map(role => item(0x54,role.raw))]));
+    await send(socket,pdu(2,Buffer.concat([body.subarray(0,68),item(0x10,app.body),...responses,userInfo]))); context.associated = true;
+  }
+  async respond(socket,context,id,request,status,{identifier,counts} = {}) {
+    const elements = [[2,text(request.sopClassUid)],[0x100,u16(request.field | 0x8000)],[0x120,u16(request.messageId)],[0x800,u16(identifier ? 0 : 0x101)],[0x900,u16(status)]];
+    if (request.sopUid) elements.push([0x1000,text(request.sopUid)]);
+    if (counts) {
+      if (status === 0xff00 || status === 0xff01 || status === 0xfe00) elements.push([0x1020,u16(counts.remaining)]);
+      elements.push([0x1021,u16(counts.completed)],[0x1022,u16(counts.failed)],[0x1023,u16(counts.warning)]);
     }
-    async receive(socket, context) {
-        let buffer = Buffer.alloc(0);
-        for await (const chunk of socket) {
-            buffer = Buffer.concat([buffer, chunk]);
-            while (buffer.length >= 6) {
-                const type = buffer[0], size = buffer.readUInt32BE(2);
-                if (size > 1024 * 1024) throw new Error('PDU exceeds receive limit.');
-                if (buffer.length < size + 6) break;
-                const body = buffer.subarray(6, size + 6); buffer = buffer.subarray(size + 6);
-                if (type === 1) await this.associate(socket, context, body);
-                else if (type === 4 && context.associated) await this.data(socket, context, body);
-                else if (type === 5 && context.associated && !context.active) { await this.send(socket, pdu(6, Buffer.alloc(4))); socket.end(); return; }
-                else if (type === 7) return;
-                else throw new Error('Unexpected DIMSE PDU.');
-            }
+    await sendMessage(socket,id,commandBytes(elements),true,context.peerMax);
+    if (identifier) await sendMessage(socket,id,identifier,false,context.peerMax);
+  }
+  async data(socket,context,body) {
+    for (let i = 0; i < body.length;) {
+      if (i + 6 > body.length) throw new Error('Truncated data value.');
+      const length = body.readUInt32BE(i),id = body[i + 4],flags = body[i + 5],end = i + 4 + length;
+      if (length < 2 || end > body.length || flags > 3) throw new Error('Invalid data value.');
+      const pc = context.contexts.get(id); if (!pc?.accepted) throw new Error('Unaccepted context.');
+      const bytes = body.subarray(i + 6,end);
+      if (flags & 1) {
+        if (context.commandId !== undefined && context.commandId !== id) throw new Error('Command context changed.');
+        context.commandId = id; context.commandBytes += bytes.length; if (context.commandBytes > 65536) throw new Error('Command is too large.');
+        context.commandChunks.push(bytes);
+        if (flags & 2) {
+          const command = decodeCommand(Buffer.concat(context.commandChunks)); context.commandChunks = []; context.commandBytes = 0; context.commandId = undefined;
+          await this.command(socket,context,id,pc,command);
         }
+      } else {
+        const active = context.active; if (!active || active.id !== id) throw new Error('Unexpected dataset.');
+        if (active.kind === 'query') {
+          active.bytes += bytes.length; if (active.bytes > 1024 * 1024) throw new Error('Query identifier exceeds limit.'); active.chunks.push(bytes);
+          if (flags & 2) {
+            context.active = null;
+            const operation = {command:active.command,id,pc,cancelled:false,abort:new AbortController()}; context.operation = operation;
+            operation.task = this.query(socket,context,operation,Buffer.concat(active.chunks)).catch(() => { if (!socket.destroyed) socket.destroy(); }).finally(() => { if (context.operation === operation) context.operation = null; });
+          }
+        } else await this.storeData(socket,context,active,bytes,!!(flags & 2));
+      }
+      i = end;
     }
-    async associate(socket, context, body) {
-        if (context.associated || body.length < 68 || body.readUInt16BE(0) !== 1) throw new Error('Invalid association.');
-        const called = body.subarray(4, 20).toString('ascii').trim();
-        const calling = body.subarray(20, 36).toString('ascii').trim();
-        if (called !== this.aeTitle || !/^[\x20-\x7e]{1,16}$/.test(calling)) {
-            await this.send(socket, pdu(3, Buffer.from([0, 1, 1, 7]))); socket.end(); return;
+  }
+  async command(socket,context,id,pc,command) {
+    if (command.field === 0x0fff) {
+      if (command.datasetType !== 0x101 || !command.respondedTo || context.operation?.id !== id || context.operation.command.messageId !== command.respondedTo) throw new Error('Mismatched C-CANCEL.');
+      context.operation.cancelled = true; return;
+    }
+    if (command.field === 0x8001) {
+      const pending = context.pendingStores.get(command.respondedTo);
+      if (!pending || pending.id !== id || command.datasetType !== 0x101 || command.sopClassUid !== pending.record.sopClassUid || command.sopUid !== pending.record.sopUid || command.status === undefined) throw new Error('Mismatched C-STORE sub-operation response.');
+      context.pendingStores.delete(command.respondedTo); pending.resolve(command.status); return;
+    }
+    if (context.active || context.operation) throw new Error('Asynchronous operations are not negotiated.');
+    if (!command.messageId || command.sopClassUid !== pc.abstract || !pc.requestorScu || command.field !== 0x30 && ![0,1,2].includes(command.priority)) throw new Error('Invalid DIMSE command or role.');
+    if (command.field === 0x30 && pc.abstract === VERIFICATION && command.datasetType === 0x101) await this.respond(socket,context,id,command,0);
+    else if (command.field === 1 && pc.abstract.startsWith('1.2.840.10008.5.1.4.1.1.') && command.datasetType !== 0x101 && uidValid(command.sopUid)) context.active = {kind:'store',command,id,pc,discarded:false};
+    else if (pc.query && command.field === pc.query.operation && command.datasetType !== 0x101) context.active = {kind:'query',command,id,pc,chunks:[],bytes:0};
+    else { await this.respond(socket,context,id,command,0x122); if (command.datasetType !== 0x101) throw new Error('Unsupported service.'); }
+  }
+  async storeData(socket,context,active,bytes,last) {
+    if (!context.store) {
+      const stream = new PassThrough({highWaterMark:65536}); stream.on('error',() => {}); context.store = stream;
+      if (!this.auth?.record) { active.discarded = true; active.outcome = Promise.resolve({error:{statusCode:403}}); }
+      else {
+        active.outcome = this.archive.ingest(stream,{source:`dimse:${this.aeTitle}`,expectedSopUid:active.command.sopUid,expectedSopClassUid:active.command.sopClassUid})
+          .then(result => ({result}),error => { active.discarded = true; stream.destroy(); return {error}; });
+        stream.write(part10Header({sopUid:active.command.sopUid,sopClassUid:active.command.sopClassUid,transferSyntaxUid:active.pc.transferSyntax}));
+      }
+    }
+    if (!active.discarded && !context.store.write(bytes)) await Promise.race([once(context.store,'drain'),active.outcome]);
+    if (last) {
+      context.store.end(); const outcome = await active.outcome;
+      await this.respond(socket,context,active.id,active.command,outcome.error ? outcome.error.statusCode === 409 ? 0x111 : 0xa700 : 0);
+      context.store.destroy(); context.store = null; context.active = null;
+    }
+  }
+  async query(socket,context,operation,bytes) {
+    const {command,id,pc} = operation; let counts;
+    try {
+      if (!this.auth?.record) throw Object.assign(new Error('Archive setup is required.'),{dimseStatus:command.field === 0x20 ? 0xa700 : 0xa701});
+      const identifier = parseIdentifier(bytes,pc.transferSyntax), plan = queryPlan(identifier,pc.query.model,command.field !== 0x20);
+      if (command.field === 0x20) {
+        const groups = matchingGroups(this.archive,plan,this.maxQueryResults);
+        for (const {identity} of groups) {
+          if (operation.cancelled || context.closed) break;
+          await this.respond(socket,context,id,command,plan.optionalKeysUnsupported ? 0xff01 : 0xff00,{identifier:encodeIdentifier(responseIdentifier(this.archive,plan,identity,identifier,this.aeTitle),pc.transferSyntax)});
+          await nextTurn();
         }
-        const requestItems = items(body, 68), responses = [];
-        const app = requestItems.find(i => i.type === 0x10);
-        if (app?.body.toString('ascii') !== '1.2.840.10008.3.1.1.1') throw new Error('Unsupported application context.');
-        for (const pc of requestItems.filter(i => i.type === 0x20)) {
-            if (pc.body.length < 4) throw new Error('Invalid presentation context.');
-            const id = pc.body[0], inner = items(pc.body, 4);
-            if (id % 2 === 0 || context.contexts.has(id)) throw new Error('Invalid context ID.');
-            const abstract = inner.find(i => i.type === 0x30)?.body.toString('ascii');
-            const proposed = inner.filter(i => i.type === 0x40).map(i => i.body.toString('ascii'));
-            const transferSyntax = proposed.find(ts => transferSyntaxes.has(ts));
-            const storage = abstract?.startsWith('1.2.840.10008.5.1.4.1.1.');
-            const accepted = Boolean(transferSyntax && (abstract === verification || storage));
-            context.contexts.set(id, { abstract, transferSyntax, accepted });
-            responses.push(item(0x21, Buffer.concat([Buffer.from([id, 0, accepted ? 0 : transferSyntax ? 3 : 4, 0]), item(0x40, Buffer.from(transferSyntax || proposed[0] || '1.2.840.10008.1.2'))])));
-        }
-        if (!responses.length) throw new Error('No presentation contexts.');
-        const fixed = Buffer.from(body.subarray(0, 68));
-        const max = Buffer.alloc(4); max.writeUInt32BE(1024 * 1024);
-        const userInfo = item(0x50, Buffer.concat([item(0x51, max), item(0x52, Buffer.from('2.25.90504590600459060045906004590600459')),
-            item(0x55, Buffer.from('EASI_STORE_010'))]));
-        await this.send(socket, pdu(2, Buffer.concat([fixed, item(0x10, app.body), ...responses, userInfo])));
-        context.associated = true;
+        if (!context.closed) await this.respond(socket,context,id,command,operation.cancelled ? 0xfe00 : 0);
+        return;
+      }
+      const records = matchingInstances(this.archive,plan,this.maxRetrieveInstances);
+      counts = {remaining:records.length,completed:0,failed:0,warning:0};
+      let destination;
+      if (command.field === 0x21) {
+        if (!/^[\x20-\x7e]{1,16}$/.test(command.moveDestination ?? '') || command.moveDestination.includes('\\')) throw Object.assign(new Error('Unknown move destination.'),{dimseStatus:0xa801});
+        destination = await this.resolveMoveDestination(command.moveDestination);
+        if (!destination) throw Object.assign(new Error('Unknown move destination.'),{dimseStatus:0xa801});
+      }
+      const failed = [];
+      await this.respond(socket,context,id,command,0xff00,{counts});
+      for (const record of records) {
+        if (operation.cancelled || context.closed) break;
+        let status = 0xa700;
+        try {
+          if (command.field === 0x10) status = await this.getSubOperation(socket,context,record,command.priority);
+          else status = (await sendStoredInstance({...destination,calledAeTitle:destination.calledAeTitle ?? command.moveDestination,callingAeTitle:destination.callingAeTitle ?? this.aeTitle},record,
+            {signal:operation.abort.signal,moveOriginatorAeTitle:context.callingAeTitle,moveOriginatorMessageId:command.messageId,priority:command.priority})).status;
+        } catch { if (context.closed) return; }
+        counts.remaining--;
+        if (status === 0) counts.completed++;
+        else if ((status & 0xf000) === 0xb000) counts.warning++;
+        else { counts.failed++; failed.push(record.sopUid); }
+        if (!context.closed) await this.respond(socket,context,id,command,0xff00,{counts});
+        await nextTurn();
+      }
+      if (context.closed) return;
+      const status = operation.cancelled ? 0xfe00 : counts.failed || counts.warning ? 0xb000 : 0;
+      // A failed UID list belongs to unsuccessful sub-operations, not warnings.
+      const result = failed.length ? encodeIdentifier({'00080058':failed},pc.transferSyntax) : undefined;
+      await this.respond(socket,context,id,command,status,{counts,identifier:result});
+    } catch (error) {
+      if (!context.closed) await this.respond(socket,context,id,command,error.dimseStatus ?? (command.field === 0x20 ? 0xa700 : counts ? 0xa702 : 0xa701),{counts});
     }
-    async respond(socket, id, request, status) {
-        const elements = [[0x0002, text(request.sopClassUid)], [0x0100, u16(request.field | 0x8000)],
-            [0x0120, u16(request.messageId)], [0x0800, u16(0x0101)], [0x0900, u16(status)]];
-        if (request.sopUid) elements.push([0x1000, text(request.sopUid)]);
-        const command = commandBytes(elements), pdv = Buffer.alloc(6); pdv.writeUInt32BE(command.length + 2); pdv[4] = id; pdv[5] = 3;
-        await this.send(socket, pdu(4, Buffer.concat([pdv, command])));
-    }
-    async data(socket, context, body) {
-        let i = 0;
-        while (i < body.length) {
-            if (i + 6 > body.length) throw new Error('Truncated data value.');
-            const length = body.readUInt32BE(i), id = body[i + 4], flags = body[i + 5], end = i + 4 + length;
-            if (length < 2 || end > body.length || flags > 3) throw new Error('Invalid data value.');
-            const pc = context.contexts.get(id);
-            if (!pc?.accepted) throw new Error('Unaccepted context.');
-            const bytes = body.subarray(i + 6, end);
-            if (flags & 1) {
-                if (context.active) throw new Error('Asynchronous operations are not negotiated.');
-                if (context.commandId !== undefined && context.commandId !== id) throw new Error('Command context changed.');
-                context.commandId = id; context.commandBytes += bytes.length;
-                if (context.commandBytes > 65536) throw new Error('Command is too large.');
-                context.commandChunks.push(bytes);
-                if (flags & 2) {
-                    const command = decodeCommand(Buffer.concat(context.commandChunks));
-                    context.commandChunks = []; context.commandBytes = 0; context.commandId = undefined;
-                    if (!command.messageId || command.sopClassUid !== pc.abstract) throw new Error('Invalid DIMSE command.');
-                    if (command.field === 0x0030 && pc.abstract === verification && command.datasetType === 0x0101) await this.respond(socket, id, command, 0);
-                    else if (command.field === 0x0001 && pc.abstract !== verification && command.datasetType !== 0x0101 && command.sopUid) {
-                        if (!/^([0-9]+\.)+[0-9]+$/.test(command.sopUid) || command.sopUid.length > 64) throw new Error('Invalid SOP UID.');
-                        context.active = { command, id, pc, discarded: false };
-                    } else { await this.respond(socket, id, command, 0x0122); if (command.datasetType !== 0x0101) throw new Error('Unsupported service.'); }
-                }
-            } else {
-                const active = context.active;
-                if (!active || active.id !== id) throw new Error('Unexpected dataset.');
-                if (!context.store) {
-                    const stream = new PassThrough({ highWaterMark: 65536 });
-                    stream.on('error', () => {}); context.store = stream;
-                    if (!this.auth?.record) {
-                        active.discarded = true; active.outcome = Promise.resolve({ error: { statusCode: 403 } });
-                    } else {
-                        active.outcome = this.archive.ingest(stream, { source: `dimse:${this.aeTitle}`,
-                            expectedSopUid: active.command.sopUid, expectedSopClassUid: active.command.sopClassUid })
-                            .then(result => ({ result }), error => { active.discarded = true; stream.destroy(); return { error }; });
-                        stream.write(part10Header({ sopUid: active.command.sopUid, sopClassUid: active.command.sopClassUid, transferSyntaxUid: pc.transferSyntax }));
-                    }
-                }
-                if (!active.discarded && !context.store.write(bytes)) {
-                    await Promise.race([once(context.store, 'drain'), active.outcome]);
-                }
-                if (flags & 2) {
-                    context.store.end();
-                    const outcome = await active.outcome;
-                    await this.respond(socket, id, active.command, outcome.error ? outcome.error.statusCode === 409 ? 0x0111 : 0xa700 : 0);
-                    context.store.destroy(); context.store = null; context.active = null;
-                }
-            }
-            i = end;
-        }
-    }
-    async close() {
-        for (const socket of this.sockets) socket.destroy();
-        const tasks = [...this.sockets].map(socket => socket.finishedTask);
-        if (this.server.listening) await new Promise(resolve => this.server.close(resolve));
-        await Promise.allSettled(tasks);
-    }
+  }
+  async getSubOperation(socket,context,record,priority) {
+    const chosen = [...context.contexts].find(([,pc]) => pc.accepted && pc.requestorScp && pc.abstract === record.sopClassUid && pc.transferSyntax === record.transferSyntaxUid);
+    if (!chosen) return 0xa700;
+    // Validate the stored file before emitting a C-STORE command: an unreadable
+    // source is a failed sub-operation, not an incomplete dataset on the wire.
+    await dataSetOffset(record.path);
+    const [id] = chosen,messageId = context.nextMessageId; context.nextMessageId = messageId % 65535 + 1;
+    let pending;
+    const acknowledged = new Promise((resolve,reject) => { pending = {id,record,resolve,reject}; });
+    // Attach the rejection handler before streaming, so disconnects never create
+    // an unhandled promise rejection while the source stream is unwinding.
+    acknowledged.catch(() => {}); context.pendingStores.set(messageId,pending);
+    const timer = setTimeout(() => { context.pendingStores.delete(messageId); pending.reject(new Error('C-STORE sub-operation timed out.')); socket.destroy(); },120000); timer.unref();
+    try {
+      await sendMessage(socket,id,commandBytes([[2,text(record.sopClassUid)],[0x100,u16(1)],[0x110,u16(messageId)],[0x700,u16(priority)],[0x800,u16(0)],[0x1000,text(record.sopUid)]]),true,context.peerMax);
+      try { await sendStoredData(socket,id,record.path,context.peerMax); }
+      catch (error) { context.closed = true; socket.destroy(); throw error; }
+      return await acknowledged;
+    } finally { clearTimeout(timer); context.pendingStores.delete(messageId); }
+  }
+  async close() {
+    const sockets = [...this.sockets]; for (const socket of sockets) socket.destroy();
+    if (this.server.listening) await new Promise(resolve => this.server.close(resolve));
+    await Promise.allSettled(sockets.map(socket => socket.finishedTask));
+  }
 }
+export { retrieveToArchive } from './QueryRetrieveScu.js';
