@@ -82,7 +82,7 @@ try {
     const opener = process.platform === 'darwin' ? 'open' : 'xdg-open';
     await writeFile(path.join(emptyPath, opener), '#!/bin/sh\nexit 0\n', { mode: 0o755 });
   }
-  const dataDir = path.join(scratch, 'archive-data');
+  const dataDir = path.join(scratch, 'archive & notes !');
   const port = await availablePort();
   const base = `http://127.0.0.1:${port}`;
   const entry = path.join(bundle, process.platform === 'win32' ? 'Start EASI Store.cmd' : process.platform === 'darwin' ? 'Start EASI Store.command' : 'Start EASI Store.sh');

@@ -153,7 +153,7 @@ export async function packagePortable(options) {
     const launcher = options.target.startsWith('darwin-') ? 'launch-macos.command' : options.target.startsWith('win32-') ? 'launch-windows.cmd' : 'launch-linux.sh';
     // Keep the launcher in scripts (its relative paths are fixed), and add a
     // small root entry point so the first action is obvious after extraction.
-    if (launcher.endsWith('.cmd')) await writeFile(path.join(bundle, 'Start EASI Store.cmd'), '@echo off\r\ncall "%~dp0scripts\\launch-windows.cmd"\r\n');
+    if (launcher.endsWith('.cmd')) await writeFile(path.join(bundle, 'Start EASI Store.cmd'), '@echo off\r\nsetlocal DisableDelayedExpansion\r\ncall "%~dp0scripts\\launch-windows.cmd"\r\n');
     else {
       const entry = options.target.startsWith('darwin-') ? 'Start EASI Store.command' : 'Start EASI Store.sh';
       await writeFile(path.join(bundle, entry), `#!/bin/sh\nexec "$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)/scripts/${launcher}" "$@"\n`, { mode: 0o755 });

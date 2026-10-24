@@ -15,4 +15,10 @@ Covered boundaries include disk-backed ingest, original-byte retrieval, duplicat
 - Independent Orthanc 1.12.8 in a disposable local configuration: Verification C-ECHO and Storage C-STORE to EASI Store succeeded. No existing Orthanc database or original medical files were used.
 - Portable macOS ARM64: bundled official Node 24.22.1, file inventory verification, launcher with no system Node in PATH, setup, synthetic import, restart/login, and persisted counts passed.
 
-Windows and Linux portable checks run in the manual [portable workflow](../.github/workflows/portable.yml). A generated artifact or successful unit suite alone is not evidence of native platform validation. Signed installers, multi-node durability, sustained performance, broad independent modality interoperability, production deployment qualification, and full DICOMweb conformance remain release gates in [BACKLOG.md](BACKLOG.md).
+## Native portable CI baseline
+
+The [successful portable matrix on 2026-10-24](https://github.com/davidvaccaro/easi-store/actions/runs/40103493426) ran on native macOS, Windows, and Linux runners. Each passed all 27 synthetic tests, TypeScript validation, the production build/distribution verification, runtime-bundled packaging, and the actual portable launcher smoke check. The smoke verified the artifact inventory and Node 24.22.1, launched without a system Node on PATH, created the administrator, imported 12 synthetic instances, and confirmed counts/bytes after restart. Windows packaging used the native x64 runner and Linux used the native x64 runner; local macOS ARM64 validation is recorded above.
+
+The smoke now also uses an archive directory containing spaces, `&`, and `!` to exercise literal path handling. A baseline success does not certify every OS version or architecture; review the workflow run for the exact candidate being distributed.
+
+Signed installers, multi-node durability, sustained performance, broad independent modality interoperability, production deployment qualification, and full DICOMweb conformance remain release gates in [BACKLOG.md](BACKLOG.md).

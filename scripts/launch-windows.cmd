@@ -1,5 +1,5 @@
 @echo off
-setlocal
+setlocal DisableDelayedExpansion
 cd /d "%~dp0.."
 set "EASI_NODE=node"
 if exist "%CD%\runtime\node.exe" set "EASI_NODE=%CD%\runtime\node.exe"
@@ -21,7 +21,7 @@ if errorlevel 1 goto failed
 :ready
 if not defined EASI_STORE_DATA_DIR set "EASI_STORE_DATA_DIR=%LOCALAPPDATA%\EASI Store"
 if not defined EASI_STORE_PORT set "EASI_STORE_PORT=8048"
-echo Archive: %EASI_STORE_DATA_DIR%
+echo Archive: "%EASI_STORE_DATA_DIR%"
 echo Keep this window open. Control-C stops the service.
 "%EASI_NODE%" src\cli.js start --data-dir "%EASI_STORE_DATA_DIR%" --host 127.0.0.1 --port "%EASI_STORE_PORT%" --open
 if errorlevel 1 goto failed

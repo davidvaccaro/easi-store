@@ -61,7 +61,7 @@ npm run artifact:pack -- --bundle-runtime \
   --output /absolute/path/to/release-artifacts
 ```
 
-Recognized targets are `darwin-arm64`, `darwin-x64`, `linux-arm64`, `linux-x64`, `win32-arm64`, and `win32-x64`. Recognition means the packager knows the official Node distribution name; it is not evidence that Store has passed native tests on all six targets. The workflow builds on macOS, Windows, and Linux; review each run and actual CPU architecture before publishing its outputs.
+Recognized targets are `darwin-arm64`, `darwin-x64`, `linux-arm64`, `linux-x64`, `win32-arm64`, and `win32-x64`. Recognition means the packager knows the official Node distribution name; it is not evidence that Store has passed native tests on all six targets. The [native macOS, Windows, and Linux matrix passed](https://github.com/davidvaccaro/easi-store/actions/runs/40103493426) on 2026-10-24, including the 27-test suite and actual runtime-bundled launcher smoke checks. Local macOS ARM64 packaging also passed. See [validation evidence](VALIDATION.md), and review the exact run and actual CPU architecture before publishing a candidate.
 
 The packager:
 
