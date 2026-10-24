@@ -23,6 +23,11 @@ test('offline backup and restore verify original hashes, account data, and rejec
     await assert.rejects(execFile(process.execPath, [cli, 'backup', '--data-dir', dataDir, '--output', backup]), /owns this archive/);
     await archive.close();
     await execFile(process.execPath, [cli, 'backup', '--data-dir', dataDir, '--output', backup]);
+    // The additive access-policy release must restore an existing Phase 2 backup.
+    const backupManifestPath = path.join(backup, 'backup-manifest.json');
+    const earlierManifest = JSON.parse(await readFile(backupManifestPath, 'utf8'));
+    earlierManifest.version = '0.2.0';
+    await writeFile(backupManifestPath, JSON.stringify(earlierManifest));
     await execFile(process.execPath, [cli, 'restore', '--input', backup, '--data-dir', restored]);
     archive = await Archive.open({ dataDir: restored });
     try { assert.equal(archive.stats().instances, 1); assert.deepEqual(await readFile(archive.getInstance(studyUid, seriesUid, sopUid).path), original); }

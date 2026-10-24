@@ -14,6 +14,22 @@ docker compose stop
 
 Closing a laptop, killing the process, or losing power can interrupt an import. Recovery reconciles staging/object/catalog state on startup. A failed or interrupted request must be retried; the client must not assume a study was accepted merely because some bytes were sent. Identical reimports are safe to retry.
 
+## Archive client access
+
+The default **authenticated** profile requires a session cookie or API Bearer token for DICOMweb. A machine integration can use its token directly without signing into the administrator UI. Administration and `/api/v1` management operations remain authenticated in both profiles.
+
+For a research archive on one workstation, choose **Administration → Client access → Local research → Save access settings**. A headless source/portable installation can select the same profile at startup:
+
+```sh
+node src/cli.js start --access-profile local-research
+```
+
+The choice persists in the private `access-policy.json` and is included in a full archive backup. Local DICOMweb query/retrieve/STOW clients and trusted local DIMSE clients do not need a browser session. Ordinary non-browser STOW clients do not need Store's management-specific `X-EASI-Store` header. Both listeners must bind to literal loopback addresses; the profile is rejected for network binds. Host validation and foreign browser-origin write rejection remain active. Do not forward a research listener through a public reverse proxy or tunnel.
+
+Select **Authenticated clients → Save access settings**, or restart with `--access-profile authenticated`, to restore credential-required DICOMweb access. DICOMweb policy changes apply immediately. DIMSE uses an independent calling-AE/source-IP admission policy; updates apply to new associations. Restart when existing associations must be disconnected immediately.
+
+HTTP and DIMSE have separate listener addresses. DIMSE remains on loopback when HTTP binds to a network interface unless `--dimse-host` is explicitly set. Network DIMSE needs an explicit allowed-peer policy as well as deliberate port publication/firewall configuration; Docker does not expose it by default. [ACCESS_CONTROL.md](ACCESS_CONTROL.md) documents the validated policy format, API, environment variables, and topology limits. These options do not supply DICOM TLS, OIDC, granular roles, or production qualification.
+
 ## Health and diagnosis
 
 ```sh
@@ -40,7 +56,7 @@ Connections are persistent, administrator-configured destinations. Test with syn
 - Editing or removing a peer is blocked while it has active work. An old failed job cannot retry against a changed connection revision; create a new transfer to confirm the new destination.
 - Remote delivery across an interrupted final ACK is **at least once**. A remote archive can have committed an object before Store records its ACK. Its duplicate policy matters on retry. Conflicting byte representations remain explicit failures.
 
-Transfer jobs and peer configuration are included in a full archive backup. A restored archive can resume unfinished transfers to its recorded peers. Before starting a restored copy on another host, review which transfers may resume and keep it network-isolated if their execution would be inappropriate. Do not run the original and restored copy concurrently against the same destinations without an operator decision.
+Transfer jobs, peer configuration, and the archive access policy are included in a full archive backup. A restored archive can resume unfinished transfers to its recorded peers. Before starting a restored copy on another host, review its access profile, DIMSE callers, and which transfers may resume; keep it network-isolated if their execution would be inappropriate. A persisted local research profile refuses incompatible network listener binds. Do not run the original and restored copy concurrently against the same destinations without an operator decision.
 
 ## Remote credentials
 
@@ -108,6 +124,6 @@ Never install application files inside an archive directory or replace a data di
 
 ## Networked/production use
 
-The preview is a single-host development/research foundation. Publishing its HTTP port to a LAN or the internet is a distinct deployment task. TLS, reverse-proxy trust, backup/restore drills, retention, OIDC/RBAC/service credentials, storage capacity/quotas, audit policy, and concurrent workload qualification have explicit backlog items. An administrator account and a healthcheck alone do not establish production readiness.
+The preview is a single-host development/research foundation. Publishing its HTTP port to a LAN or the internet is a distinct deployment task. Use authenticated mode for a network HTTP listener and protect credentials in transit with an appropriately configured HTTPS reverse proxy. DIMSE needs an explicit network bind and exact calling-AE/source-IP peers, with firewall and transport protection chosen for the environment. Those controls do not provide native DICOM TLS. Reverse-proxy trust qualification, backup/restore drills, retention, OIDC/RBAC/scoped service credentials, storage capacity/quotas, audit policy, and concurrent workload qualification have explicit backlog items. An administrator account and a healthcheck alone do not establish production readiness.
 
 No analytics or external model service is built into this product. The separately embedded viewer uses the same-origin server connection to retrieve the images selected by the user. Importing transfers data to the configured Store server; it is not local-only file viewing.

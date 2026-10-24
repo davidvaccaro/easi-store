@@ -251,8 +251,18 @@ try {
   await checkedJson(await fetch(`${base}/api/v1/connections/${peer.id}`, { method: 'DELETE', headers: { 'X-EASI-Store': '1', Cookie: cookie } }));
   const removed = await checkedJson(await fetch(`${base}/api/v1/connections`, { headers: { Cookie: cookie } }));
   if (removed.items.some(item => item.id === peer.id)) throw new Error('Portable peer deletion did not remove the selected connection.');
+  const initialPolicy = await checkedJson(await fetch(`${base}/api/v1/access-policy`, {headers:{Cookie:cookie}}));
+  const setProfile = async profile => checkedJson(await fetch(`${base}/api/v1/access-policy`, {method:'PUT',headers:{Cookie:cookie,'Content-Type':'application/json','X-EASI-Store':'1'},body:JSON.stringify({...initialPolicy,profile})}));
+  await setProfile('local-research');
+  if ((await fetch(`${base}/dicomweb/studies`)).status !== 200 || (await fetch(`${base}/api/v1/summary`)).status !== 401) throw new Error('Research mode did not separate client and administration access.');
+  await stop(); await launch();
+  const accessDescription = await checkedJson(await fetch(`${base}/api/v1/access`));
+  if (accessDescription.profile !== 'local-research' || accessDescription.dicomwebAuthenticationRequired !== false || (await fetch(`${base}/dicomweb/studies`)).status !== 200) throw new Error('Portable research mode did not persist without a browser session.');
+  response = await mutation('login',credentials); if (!response.ok) throw new Error('Portable administrator could not reauthenticate.');cookie=response.headers.get('set-cookie')?.split(';')[0];
+  await setProfile('authenticated');
+  if ((await fetch(`${base}/dicomweb/studies`)).status !== 401) throw new Error('Returning to authenticated mode did not protect subsequent client requests.');
   await stop();
-  console.log(JSON.stringify({ artifact: archivePath, sha256: await digest(archivePath), target, runtime: runtimeVersion, version: manifest.version, inventoryFilesVerified: manifest.files.length, systemNodeAvailableToLauncher: false, setup: 'passed', syntheticDemoInstances: demo.instances, syntheticInstances: finalSummary.instances, restartPersistence: 'passed', dicomweb: { query: 'passed', nestedMetadata: 'passed', pixelAndNestedBulk: 'passed', exactNativeFrames: 'passed', protectedRoutes: 'passed', trustedPublicPrefix: 'passed' }, thumbnails: 'passed', configuredPeerCrudAndPersistence: 'passed', duplicateSafeStowSend: 'passed', duplicateSafeWadoRetrieve: 'passed', transferCheckpointPersistence: 'passed' }, null, 2));
+  console.log(JSON.stringify({ artifact: archivePath, sha256: await digest(archivePath), target, runtime: runtimeVersion, version: manifest.version, inventoryFilesVerified: manifest.files.length, systemNodeAvailableToLauncher: false, setup: 'passed', syntheticDemoInstances: demo.instances, syntheticInstances: finalSummary.instances, restartPersistence: 'passed', dicomweb: { query: 'passed', nestedMetadata: 'passed', pixelAndNestedBulk: 'passed', exactNativeFrames: 'passed', protectedRoutes: 'passed', trustedPublicPrefix: 'passed' }, thumbnails: 'passed', configuredPeerCrudAndPersistence: 'passed', duplicateSafeStowSend: 'passed', duplicateSafeWadoRetrieve: 'passed', transferCheckpointPersistence: 'passed', explicitResearchAccessAndPersistence: 'passed', protectedAdministration: 'passed', authenticatedModeRestored: 'passed' }, null, 2));
 } finally {
   await stop();
   await rm(scratch, { recursive: true, force: true });

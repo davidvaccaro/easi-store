@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.2.1 — Client access and search interoperability
+
+- Separate DICOMweb client access from administrator sign-in with explicit, persisted `authenticated` and loopback-only `local-research` profiles.
+- Add **Administration → Client access** controls and headless startup options. Existing archives retain authenticated access unless an administrator explicitly changes the profile.
+- Permit standard local DICOMweb query/retrieve/STOW clients without credentials in research mode; keep management operations authenticated and preserve host/origin protection.
+- Make standalone local EASI View connections honor the chosen Store profile, with useful authentication guidance when credentials are required.
+- Treat a plain patient surname entered in EASI View's search workflow as a name prefix, so `Synthetic` searches `Synthetic*`; explicit DICOM name/wildcard syntax and exact patient IDs retain their existing meaning. Store's direct DICOMweb matching semantics are unchanged.
+- Add explicit calling-AE/source-IP DIMSE policies and a separate listener address; network HTTP startup does not automatically expose DIMSE.
+- Preserve durable DIMSE receiving while permitting explicitly selected local research use before administrator setup.
+
+Stored originals do not need reimporting. Local research is a workstation access option, not a public anonymous archive deployment; DICOM TLS and external identity/RBAC remain planned.
+
 ## 0.2.0 — Phase 2 interoperability preview
 
 - Add Study Root and Patient Root DIMSE C-FIND, C-GET, and configured-destination C-MOVE SCPs, with pending/final/sub-operation statuses and cancellation.

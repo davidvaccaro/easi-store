@@ -4,7 +4,7 @@
 
 EASI Store is an independent server project in the EASI family. Import DICOM instances, find a patient or examination, browse its series, open an image, and exchange studies with configured DICOMweb or DIMSE archives. Original HTTP/file imports are preserved byte for byte; DIMSE preserves the transmitted dataset and creates Part 10 file metadata. The catalog is stored in SQLite and image objects live on disk.
 
-**Status: 0.2.0 Phase 2 interoperability preview.** This version adds Query/Retrieve, connected archives, durable transfer jobs, nested DICOM JSON metadata, frames/bulk retrieval, and thumbnails. It is not Orthanc feature parity or a production-qualified PACS. [Current status](docs/STATUS.md), [DICOMweb](docs/DICOMWEB.md), and [DIMSE](docs/DIMSE.md) distinguish the implemented profiles from the full standards. [The backlog](docs/BACKLOG.md) records the path to a complete product.
+**Status: 0.2.1 Phase 2 interoperability preview.** Query/Retrieve, connected archives, durable transfer jobs, nested DICOM JSON metadata, frames/bulk retrieval, and thumbnails are available. This update separates local research client access from administrator sign-in and documents explicit DIMSE peer trust. It is not Orthanc feature parity or a production-qualified PACS. [Current status](docs/STATUS.md), [DICOMweb](docs/DICOMWEB.md), and [DIMSE](docs/DIMSE.md) distinguish the implemented profiles from the full standards. [The backlog](docs/BACKLOG.md) records the path to a complete product.
 
 ## Start with Docker
 
@@ -73,7 +73,12 @@ Archival acceptance and viewer display support are separate. Store can preserve 
 
 ## Connect applications
 
-The DICOMweb base URL is **`http://127.0.0.1:8048/dicomweb`**. Authentication is required for archive data. The public health route reveals only service availability:
+The DICOMweb base URL is **`http://127.0.0.1:8048/dicomweb`**. Choose the client access model in **Administration → Client access**:
+
+- **Authenticated clients** is the default for new and existing archives. DICOMweb clients send an API Bearer token or a valid session cookie; integrations do not need an interactive browser sign-in.
+- **Local research** lets local DICOMweb clients query, retrieve, and send studies without credentials. Both HTTP and DIMSE must bind to literal loopback addresses. Administration, management APIs, configured connections, and transfer jobs remain protected.
+
+Select **Local research → Save access settings**, or start a source installation with `node src/cli.js start --access-profile local-research`. The choice persists across restarts. [Client access](docs/ACCESS_CONTROL.md) covers both profiles, headless configuration, and the security boundaries. The public health route reveals only service availability:
 
 ```sh
 curl --fail http://127.0.0.1:8048/api/health
@@ -83,7 +88,7 @@ The DICOMweb profile includes study/series/instance QIDO searches, multipart DIC
 
 The separate [management API](docs/MANAGEMENT_API.md) is rooted at `/api/v1`. It powers the library, imports, activity, capabilities, downloads, thumbnails, configured peers, and transfer jobs. It is not an Orthanc REST API replacement, and DICOMweb does not define Store's management operations. See [architecture](docs/ARCHITECTURE.md) for the boundaries.
 
-The local DIMSE listener uses **AE title `EASISTORE`, port `4248`**. It responds to C-ECHO, receives C-STORE, and serves Study Root / Patient Root C-FIND, C-GET, and C-MOVE. Configured connections initiate C-ECHO, C-FIND, streamed C-STORE sends, and durable C-GET retrievals. C-STORE success follows archival persistence. C-MOVE destinations must match a unique configured DIMSE peer AE title. Worklists, MPPS, Storage Commitment, and DICOM TLS remain planned. The Compose port is restricted to the local machine; AE titles are not authentication, and DIMSE requires a trusted network if deliberately exposed beyond loopback. See [DIMSE profiles and setup](docs/DIMSE.md).
+The local DIMSE listener uses **AE title `EASISTORE`, port `4248`**. It responds to C-ECHO, receives C-STORE, and serves Study Root / Patient Root C-FIND, C-GET, and C-MOVE. Configured connections initiate C-ECHO, C-FIND, streamed C-STORE sends, and durable C-GET retrievals. C-STORE success follows archival persistence. C-MOVE destinations must match a unique configured DIMSE peer AE title. DIMSE uses its own calling-AE/source-IP policy, independently of HTTP sessions or Bearer tokens. It defaults to loopback; a network listener requires an explicit bind and allowed peers. AE/IP rules do not encrypt the connection. Worklists, MPPS, Storage Commitment, and DICOM TLS remain planned. See [DIMSE profiles and setup](docs/DIMSE.md), including Docker network configuration.
 
 Remote HTTP credentials are optional, server-side configuration. Start with `--credentials-file /absolute/path/to/private-credentials.json`, then reference a named entry in the connection form. Do not put tokens in peer URLs or client bundles. [Operations](docs/OPERATIONS.md#remote-credentials) documents the file format and permissions.
 
@@ -91,14 +96,14 @@ Remote HTTP credentials are optional, server-side configuration. Start with `--c
 
 Use the updated **EASI View source checkout** alongside Store; this local development integration does not change the separately published viewer SDK version.
 
-1. Start Store on its default ports and sign in at **http://127.0.0.1:8048/**.
+1. Start Store on its default ports. For a local research archive, sign in at **http://127.0.0.1:8048/** once to choose **Administration → Client access → Local research → Save access settings**. Subsequent viewer use does not need the Store browser session. A headless installation can select the profile with `--access-profile local-research` instead.
 2. In the independent `easi-view` checkout, run `npm ci` if needed, then `npm run dev`.
-3. Open **http://127.0.0.1:5174/** in the same browser. Use `127.0.0.1` for both applications so the existing Store HTTP-only session can be used by the read-only bridge.
+3. Open **http://127.0.0.1:5174/**. In authenticated mode, use the same browser and `127.0.0.1` for both applications so the Store HttpOnly session reaches the local bridge; a configured integration can use a private Bearer token instead. Local research does not depend on that session.
 4. Choose **Open → Open Study → Remote Storage**, then **Local EASI Store · DICOMweb** or **Local EASI Store · DIMSE**. Search for a patient, select studies, and open the images.
 
-The first source exercises QIDO/metadata/WADO requests; the second uses the viewer's server-side DIMSE gateway to perform real C-FIND/C-GET requests against port 4248. The bridge verifies the Store session, forwards only to the fixed loopback Store, and permits read workflows only. Browsers do not open raw DIMSE sockets. STOW/C-STORE sends are exercised through Store's configured transfer jobs or a separate protocol sender, rather than by the viewer's search/open workflow.
+The first source exercises QIDO/metadata/WADO requests; the second uses the viewer's server-side DIMSE gateway to perform real C-FIND/C-GET requests against port 4248. The bridge discovers Store's access profile, forwards only to the fixed loopback Store, and permits read workflows only. It honors explicit local research access and requires credentials when the Store requires them. Browsers do not open raw DIMSE sockets. STOW/C-STORE sends are exercised through Store's configured transfer jobs or a separate protocol sender, rather than by the viewer's search/open workflow.
 
-If Store uses alternate ports, set `EASI_VIEW_STORE_HTTP_PORT` / `EASI_VIEW_STORE_DIMSE_PORT` in the viewer launch environment. `EASI_VIEW_PORT` changes its own listening port. The development bridge fixes the called/calling AEs to `EASISTORE` / `EASI_VIEW`; custom deployment/authentication and AE configuration require an explicit integration rather than enabling public archive access or wildcard CORS.
+If Store uses alternate ports, set `EASI_VIEW_STORE_HTTP_PORT` / `EASI_VIEW_STORE_DIMSE_PORT` in the viewer launch environment. `EASI_VIEW_PORT` changes its own listening port. The development bridge fixes the called/calling AEs to `EASISTORE` / `EASI_VIEW`. Custom deployment credentials and AE settings need an explicit integration; keep server secrets out of browser bundles and do not enable wildcard CORS.
 
 ## Development and validation
 

@@ -8,15 +8,21 @@ import { part10Header } from '../synthetic.js';
 import { APPLICATION, IMPLEMENTATION, QUERY_MODELS, TRANSFER_SYNTAXES, VERIFICATION, IMPLICIT, EXPLICIT,
   u16, u32, text, uidValid, item, items, pdu, commandBytes, decodeCommand, send, sendMessage, sendStoredData, sendStoredInstance, dataSetOffset } from './wire.js';
 import { parseIdentifier, encodeIdentifier, queryPlan, matchingGroups, matchingInstances, responseIdentifier } from './query.js';
+import { isLoopbackAddress } from '../http/AccessPolicy.js';
 export { sendStoredInstance } from './wire.js';
 
 export class StorageScp {
   constructor({ archive, auth, host = '127.0.0.1', port = 4248, aeTitle = 'EASISTORE', maxConnections = 8,
-    maxQueryResults = 10000, maxRetrieveInstances = 10000, resolveMoveDestination = () => null, associationPolicy = () => true }) {
+    maxQueryResults = 10000, maxRetrieveInstances = 10000, resolveMoveDestination = () => null, associationPolicy,
+    archiveReady = () => Boolean(auth?.record) }) {
     if (!/^[A-Z0-9_ -]{1,16}$/.test(aeTitle)) throw new Error('DIMSE AE title must contain 1–16 uppercase letters, numbers, spaces, _ or -.');
     if (![maxConnections,maxQueryResults,maxRetrieveInstances].every(value => Number.isInteger(value) && value > 0 && value <= 65535)) throw new Error('Invalid DIMSE operation limits.');
-    if (typeof resolveMoveDestination !== 'function' || typeof associationPolicy !== 'function') throw new Error('DIMSE policies must be functions.');
-    Object.assign(this,{ archive,auth,host,port,aeTitle,maxConnections,maxQueryResults,maxRetrieveInstances,resolveMoveDestination,associationPolicy });
+    if (associationPolicy === undefined) {
+      if (host !== 'localhost' && !isLoopbackAddress(host)) throw new Error('Network DIMSE listeners require an explicit calling-AE/source-IP association policy.');
+      associationPolicy = ({remoteAddress}) => isLoopbackAddress(remoteAddress);
+    }
+    if (typeof resolveMoveDestination !== 'function' || typeof associationPolicy !== 'function' || typeof archiveReady !== 'function') throw new Error('DIMSE policies must be functions.');
+    Object.assign(this,{ archive,auth,host,port,aeTitle,maxConnections,maxQueryResults,maxRetrieveInstances,resolveMoveDestination,associationPolicy,archiveReady });
     this.sockets = new Set(); this.server = net.createServer(socket => this.accept(socket));
   }
   async listen() {
@@ -156,7 +162,7 @@ export class StorageScp {
   async storeData(socket,context,active,bytes,last) {
     if (!context.store) {
       const stream = new PassThrough({highWaterMark:65536}); stream.on('error',() => {}); context.store = stream;
-      if (!this.auth?.record) { active.discarded = true; active.outcome = Promise.resolve({error:{statusCode:403}}); }
+      if (!this.archiveReady()) { active.discarded = true; active.outcome = Promise.resolve({error:{statusCode:403}}); }
       else {
         active.outcome = this.archive.ingest(stream,{source:`dimse:${this.aeTitle}`,expectedSopUid:active.command.sopUid,expectedSopClassUid:active.command.sopClassUid})
           .then(result => ({result}),error => { active.discarded = true; stream.destroy(); return {error}; });
@@ -173,7 +179,7 @@ export class StorageScp {
   async query(socket,context,operation,bytes) {
     const {command,id,pc} = operation; let counts;
     try {
-      if (!this.auth?.record) throw Object.assign(new Error('Archive setup is required.'),{dimseStatus:command.field === 0x20 ? 0xa700 : 0xa701});
+      if (!this.archiveReady()) throw Object.assign(new Error('Archive setup is required.'),{dimseStatus:command.field === 0x20 ? 0xa700 : 0xa701});
       const identifier = parseIdentifier(bytes,pc.transferSyntax), plan = queryPlan(identifier,pc.query.model,command.field !== 0x20);
       if (command.field === 0x20) {
         const groups = matchingGroups(this.archive,plan,this.maxQueryResults);

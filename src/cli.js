@@ -11,6 +11,7 @@ import { fileURLToPath } from 'node:url';
 import { createStoreServer } from './server.js';
 import { Archive } from './archive/Archive.js';
 import { Auth } from './http/Auth.js';
+import { isLoopbackAddress } from './http/AccessPolicy.js';
 import { StorageScp } from './dimse/StorageScp.js';
 import { createDemoStudy } from './synthetic.js';
 import { VERSION } from './version.js';
@@ -25,7 +26,7 @@ function parseArgs(args) {
     while (args.length) {
         const key = args.shift();
         if (['--open', '--no-dimse'].includes(key)) values[key.slice(2)] = true;
-        else if (['--data-dir', '--host', '--port', '--output', '--input', '--dimse-port', '--ae-title', '--public-url', '--label', '--credentials-file'].includes(key) && args[0] && !args[0].startsWith('--')) values[key.slice(2)] = args.shift();
+        else if (['--data-dir', '--host', '--port', '--output', '--input', '--dimse-port', '--ae-title', '--public-url', '--label', '--credentials-file', '--access-profile', '--dimse-peers-file', '--dimse-host'].includes(key) && args[0] && !args[0].startsWith('--')) values[key.slice(2)] = args.shift();
         else throw new Error(`Unknown or incomplete option: ${key}`);
     }
     return values;
@@ -88,7 +89,7 @@ export async function main(args = process.argv.slice(2)) {
         if (!o.input) throw new Error('Provide --input with a verified backup directory and --data-dir with a new destination.');
         if (existsSync(dataDir)) throw new Error('Restore destination must not exist.');
         const input = path.resolve(o.input), manifest = JSON.parse(await readFile(path.join(input, 'backup-manifest.json'), 'utf8'));
-        if (manifest.product !== 'EASI Store' || !['0.1.0', VERSION].includes(manifest.version) || !Array.isArray(manifest.files)) throw new Error('Unsupported backup manifest.');
+        if (manifest.product !== 'EASI Store' || !['0.1.0', '0.2.0', VERSION].includes(manifest.version) || !Array.isArray(manifest.files)) throw new Error('Unsupported backup manifest.');
         for (const file of manifest.files) {
             const p = path.resolve(input, file.path);
             if (!p.startsWith(input + path.sep) || (await stat(p)).size !== file.bytes || await fileHash(p) !== file.sha256) throw new Error('Backup integrity verification failed.');
@@ -105,6 +106,7 @@ export async function main(args = process.argv.slice(2)) {
     }
     if (o.command !== 'start') throw new Error('Commands: start, doctor, demo, token, backup, restore.');
     const host = o.host || process.env.EASI_STORE_HOST || '127.0.0.1';
+    const dimseHost = o['dimse-host'] || process.env.EASI_STORE_DIMSE_HOST || (isLoopbackAddress(host) ? host : '127.0.0.1');
     const port = portNumber(o.port || process.env.EASI_STORE_PORT || 8048, 'HTTP port');
     const credentialsFile = o['credentials-file'] || process.env.EASI_STORE_CREDENTIALS_FILE;
     let credentials = {};
@@ -114,22 +116,33 @@ export async function main(args = process.argv.slice(2)) {
         credentials = JSON.parse(await readFile(credentialsFile, 'utf8'));
         if (!credentials || typeof credentials !== 'object' || Array.isArray(credentials)) throw new Error('The credentials file must contain a named credential object.');
     }
-    const app = await createStoreServer({ dataDir, host, port, publicUrl: o['public-url'] || process.env.EASI_STORE_PUBLIC_URL, credentials });
+    const accessProfile = o['access-profile'] || process.env.EASI_STORE_ACCESS_PROFILE;
+    const dimsePeersFile = o['dimse-peers-file'] || process.env.EASI_STORE_DIMSE_PEERS_FILE;
+    let dimsePolicy;
+    if (dimsePeersFile) {
+        const info = await stat(dimsePeersFile);
+        if (!info.isFile() || info.size > 65536) throw new Error('Use a DIMSE policy JSON file of at most 64 KiB.');
+        dimsePolicy = JSON.parse(await readFile(dimsePeersFile, 'utf8'));
+    }
+    const app = await createStoreServer({ dataDir, host, port, publicUrl: o['public-url'] || process.env.EASI_STORE_PUBLIC_URL, credentials, accessProfile, dimsePolicy, dimseHost });
     let dimse;
     try {
         await app.listen();
         if (!o['no-dimse'] && process.env.EASI_STORE_DIMSE !== 'off') {
             const dimsePort = portNumber(o['dimse-port'] || process.env.EASI_STORE_DIMSE_PORT || 4248, 'DIMSE port');
-            dimse = new StorageScp({ archive: app.archive, auth: app.auth, host, port: dimsePort, aeTitle: o['ae-title'] || process.env.EASI_STORE_AE_TITLE || 'EASISTORE',
-                resolveMoveDestination: aeTitle => app.connections.resolveMoveDestination(aeTitle) });
+            dimse = new StorageScp({ archive: app.archive, auth: app.auth, host: dimseHost, port: dimsePort, aeTitle: o['ae-title'] || process.env.EASI_STORE_AE_TITLE || 'EASISTORE',
+                resolveMoveDestination: aeTitle => app.connections.resolveMoveDestination(aeTitle),
+                associationPolicy: peer => app.accessPolicy.canAssociate(peer),
+                archiveReady: () => app.accessPolicy.record.profile === 'local-research' || Boolean(app.auth.record) });
             await dimse.listen(); app.capabilities.dimse.enabled = true;
-            app.capabilities.dimse.port = dimsePort; app.capabilities.dimse.aeTitle = dimse.aeTitle;
-            console.log(`DIMSE: ${dimse.aeTitle} on ${host}:${dimsePort} (C-ECHO / durable C-STORE / FIND / GET / MOVE).`);
+            app.capabilities.dimse.host = dimseHost; app.capabilities.dimse.port = dimsePort; app.capabilities.dimse.aeTitle = dimse.aeTitle;
+            console.log(`DIMSE: ${dimse.aeTitle} on ${dimseHost}:${dimsePort} (C-ECHO / durable C-STORE / FIND / GET / MOVE).`);
         }
     } catch (error) { await dimse?.close(); await app.close(); throw error; }
     const url = `http://${host === '0.0.0.0' || host === '::' ? '127.0.0.1' : host.includes(':') ? `[${host}]` : host}:${port}/`;
     console.log(`EASI Store ${VERSION} preview: ${url}`);
     console.log(`Archive data: ${dataDir}`);
+    console.log(`Client access: ${app.accessPolicy.record.profile}${app.accessPolicy.record.profile === 'local-research' ? ' (loopback DICOMweb and DIMSE clients need no administrator session)' : ' (DICOMweb requires a session or bearer token; DIMSE uses AE/IP access policy)'}.`);
     if (!app.auth.record) console.log('Open the browser to create your administrator. Container bootstrap token: <data directory>/bootstrap-token.');
     if (o.open) {
         const command = process.platform === 'darwin' ? ['open', url] : process.platform === 'win32' ? ['rundll32', 'url.dll,FileProtocolHandler', url] : ['xdg-open', url];

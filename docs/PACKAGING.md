@@ -16,18 +16,17 @@ A portable package is not a signed operating-system installer. The preview inclu
 docker compose up --build -d
 ```
 
-Compose publishes HTTP on **127.0.0.1:8048** and DIMSE on **127.0.0.1:4248**, uses a persistent named volume, runs the server as a non-root user, and enables a minimal healthcheck. The container's internal listeners bind all container interfaces so host port forwarding works. Its root filesystem is read-only; `/data` and the temporary mount are writable. On first setup, retrieve the bootstrap token with `docker compose exec store cat /data/bootstrap-token` if requested by the UI.
+Compose publishes HTTP on **127.0.0.1:8048**, uses a persistent named volume, runs the server as a non-root user, and enables a minimal healthcheck. HTTP binds container interfaces for port forwarding; DIMSE stays on container loopback and is not published by default. To enable network DIMSE, configure its exact calling-AE/IP trust policy, explicitly set `EASI_STORE_DIMSE_HOST=0.0.0.0`, and publish the desired port. See [access control](ACCESS_CONTROL.md) and [DIMSE setup](DIMSE.md). Its root filesystem is read-only; `/data` and the temporary mount are writable. On first setup, retrieve the bootstrap token with `docker compose exec store cat /data/bootstrap-token` if requested by the UI.
 
 To build without Compose:
 
 ```sh
-docker build --tag easi-store:0.2.0-preview .
+docker build --tag easi-store:0.2.1-preview .
 docker volume create easi-store-archive
 docker run --rm --init --name easi-store \
   --publish 127.0.0.1:8048:8048 \
-  --publish 127.0.0.1:4248:4248 \
   --mount source=easi-store-archive,target=/data \
-  easi-store:0.2.0-preview
+  easi-store:0.2.1-preview
 ```
 
 This builds an image locally. No Docker Hub/GHCR image publication is implied. The image recipe follows the Node 24 base image; a qualified release should additionally record the resolved base-image digest and scan the image it actually publishes.

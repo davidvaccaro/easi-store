@@ -8,6 +8,7 @@ import { fileURLToPath } from 'node:url';
 import { Archive } from './archive/Archive.js';
 import { handleDicomweb } from './dicomweb/router.js';
 import { Auth, isLoopback } from './http/Auth.js';
+import { AccessPolicy, isLoopbackAddress } from './http/AccessPolicy.js';
 import { json, httpError, readJson } from './http/utils.js';
 import { createDemoStudy } from './synthetic.js';
 import { ConnectionService, handleConnectionRoutes } from './connections/ConnectionService.js';
@@ -38,15 +39,21 @@ export const CAPABILITIES = {
 
 export async function createStoreServer(options) {
     const { dataDir, host = '127.0.0.1', port = 8048, publicUrl, maxInstanceBytes = 536870912,
-        staticRoot = path.join(root, 'dist/public'), credentials = {} } = options;
+        staticRoot = path.join(root, 'dist/public'), credentials = {}, accessProfile, dimsePolicy, dimseHost = isLoopbackAddress(host) ? host : '127.0.0.1' } = options;
     const archive = await Archive.open({ dataDir, maxInstanceBytes });
     let auth;
     try { auth = await new Auth(dataDir).open(); } catch (error) { await archive.close(); throw error; }
+    let accessPolicy;
+    try { accessPolicy = await new AccessPolicy({ dataDir, host, dimseHost }).open({ profile: accessProfile, dimse: dimsePolicy }); }
+    catch (error) { await archive.close(); throw error; }
     let connections;
     try { connections = await ConnectionService.open({ archive, credentials }); } catch (error) { await archive.close(); throw error; }
     const thumbnails = new ThumbnailService();
     let activeUploads = 0, closing = false;
     const capabilities = structuredClone(CAPABILITIES);
+    capabilities.security.accessProfiles = ['authenticated', 'local-research'];
+    capabilities.security.accessProfile = accessPolicy.record.profile;
+    capabilities.security.dimseAccess = 'Loopback or explicit calling AE title + source IP allowlist; no DICOM TLS.';
     const allowedHosts = new Set(['localhost', '127.0.0.1', '[::1]']);
     if (host !== '0.0.0.0' && host !== '::') allowedHosts.add(host);
     if (publicUrl) allowedHosts.add(new URL(publicUrl).hostname);
@@ -69,14 +76,17 @@ export async function createStoreServer(options) {
             if (forwardedBase !== undefined && forwardedBase !== '/easi-store/dicomweb') throw httpError(400, 'Unsupported public DICOMweb base path.');
             const publicBasePath = forwardedBase || '/dicomweb';
             const identity = auth.identify(req);
+            const dicomwebPath = p === '/dicomweb' || p.startsWith('/dicomweb/');
+            const localDicomwebAccess = dicomwebPath && accessPolicy.allowsDicomweb(req);
             const mutation = !['GET', 'HEAD', 'OPTIONS'].includes(method);
             if (mutation) {
                 const origin = req.headers.origin;
                 const expected = publicUrl ? new URL(publicUrl).origin : `http://${req.headers.host}`;
                 if (origin && origin !== expected) throw httpError(403, 'Cross-origin writes are not allowed.');
-                if (identity !== 'bearer' && req.headers['x-easi-store'] !== '1') throw httpError(403, 'Include the X-EASI-Store: 1 request header.');
+                if (identity !== 'bearer' && !localDicomwebAccess && req.headers['x-easi-store'] !== '1') throw httpError(403, 'Include the X-EASI-Store: 1 request header.');
             }
             if (p === '/api/health' && method === 'GET') return json(res, 200, { status: 'ok', version: VERSION });
+            if (p === '/api/v1/access' && method === 'GET') return json(res, 200, accessPolicy.publicDescription(req));
             if (p === '/api/v1/session' && method === 'GET') return json(res, 200, { authenticated: Boolean(identity), setupRequired: !auth.record,
                 bootstrapRequired: !auth.record && !isLoopback(req.socket.remoteAddress) });
             if ((p === '/api/v1/setup' || p === '/api/v1/login') && method === 'POST') {
@@ -86,7 +96,13 @@ export async function createStoreServer(options) {
                 return json(res, 200, { authenticated: true, setupRequired: false });
             }
             if (p.startsWith('/api/') || p === '/dicomweb' || p.startsWith('/dicomweb/')) {
-                if (!identity) throw httpError(401, 'Sign in to access the archive.');
+                if (!identity && !localDicomwebAccess) throw httpError(401, 'Sign in or use an API bearer token to access the archive.');
+            }
+            if (p === '/api/v1/access-policy' && method === 'GET') return json(res, 200, accessPolicy.snapshot());
+            if (p === '/api/v1/access-policy' && method === 'PUT') {
+                const policy = await accessPolicy.update(await readJson(req, 65536));
+                capabilities.security.accessProfile = policy.profile;
+                return json(res, 200, policy);
             }
             if (p === '/api/v1/logout' && method === 'POST') {
                 auth.logout(req); res.setHeader('Set-Cookie', cookie('', req, true)); return json(res, 200, { authenticated: false });
@@ -168,7 +184,7 @@ export async function createStoreServer(options) {
         }
     });
     server.on('clientError', (_error, socket) => socket.end('HTTP/1.1 400 Bad Request\r\nConnection: close\r\n\r\n'));
-    return { server, archive, auth, capabilities, connections,
+    return { server, archive, auth, capabilities, connections, accessPolicy,
         async listen() {
             await new Promise((resolve, reject) => { server.once('error', reject); server.listen(port, host, () => { server.off('error', reject); resolve(); }); });
             return server.address();

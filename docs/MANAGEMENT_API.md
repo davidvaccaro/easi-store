@@ -1,6 +1,6 @@
-# Management API preview — 0.2.0
+# Management API preview — 0.2.1
 
-These endpoints belong to EASI Store, separately from `/dicomweb`. They power the browser interface and are versioned under `/api/v1`. All archive reads and writes require a signed-in session or Bearer token. This first preview has a single administrator role; granular roles are a later milestone.
+These endpoints belong to EASI Store, separately from `/dicomweb`. They power the browser interface and are versioned under `/api/v1`. Management archive reads and writes require a signed-in session or Bearer token in both client access profiles. The explicit public discovery/bootstrap routes are listed below. This first preview has a single administrator role; granular roles are a later milestone.
 
 ## Authentication
 
@@ -14,11 +14,16 @@ node src/cli.js token --label "Research importer"
 
 Use the same `--data-dir` as the server if it is customized. The command prints a new credential exactly once, as an explicit local administrative action. Keep it in a secret store, outside Git and browser client bundles. Restart Store and send `Authorization: Bearer YOUR_TOKEN` on requests. Tokens persist across restarts; the preview does not yet provide token revocation UI or scoped identities.
 
+The **local-research** profile changes local DICOMweb client requirements, not management authorization. A research client may query/retrieve/STOW without credentials on a loopback connection, but cannot use management import, summary, thumbnails, settings, peer configuration, or transfer jobs without an administrator session or token. DIMSE has separate calling-AE/source-IP trust rules. See [ACCESS_CONTROL.md](ACCESS_CONTROL.md).
+
 ## Endpoints
 
 | Method | Path after `/api/v1` | Result |
 | --- | --- | --- |
 | GET | `/session` | Minimal public authentication/setup state |
+| GET | `/access` | Minimal public client-access requirements; no patient data, credentials, or peer list |
+| GET | `/access-policy` | Authenticated administrator's complete persisted client/DIMSE policy |
+| PUT | `/access-policy` | Authenticated replacement of the complete validated policy; invalid updates leave the active policy unchanged |
 | POST | `/setup` | First administrator, `{username,password,bootstrapToken?}`; loopback or container bootstrap token |
 | POST | `/login` | `{username,password}`, sets session cookie |
 | POST | `/logout` | Ends current browser session |
@@ -45,6 +50,25 @@ Use the same `--data-dir` as the server if it is customized. The command prints 
 `GET /api/health` is a separate public availability check. It does not expose archive counts or identifiers. Study and series IDs in API paths are DICOM UIDs, not filesystem paths. Object paths and files are never directly served from the data directory.
 
 Management errors have `{error:{code,message}}`. `400` indicates invalid input, `401` a missing/expired identity, `403` a disallowed origin/header/host, `409` a conflicting UID, `413` an oversized instance, `415` unsupported media, and `422` an unsupported text encoding. Check the HTTP status before consuming a response. DICOMweb has its own standard result bodies described in [DICOMWEB.md](DICOMWEB.md).
+
+## Client access policy
+
+`GET /access-policy` returns a versioned policy, and `PUT /access-policy` replaces the complete object:
+
+```json
+{
+  "version": 1,
+  "profile": "authenticated",
+  "dimse": {
+    "allowLoopback": true,
+    "peers": []
+  }
+}
+```
+
+`profile` is `authenticated` or `local-research`. Each optional peer is `{ "callingAeTitle": "RESEARCH_PACS", "address": "192.0.2.40" }`; both exact values must match the incoming association. The saved policy is included in archive backups. Research mode requires literal loopback HTTP and DIMSE listeners. A network DIMSE listener requires a nonempty peer list; `allowLoopback: false` also subjects local clients to the explicit list. Host/Origin checks and session mutation headers apply to policy updates normally. [The access guide](ACCESS_CONTROL.md) details validation, admission timing, and CLI equivalents.
+
+`GET /access` reports only `profile`, `dicomwebAuthenticationRequired`, `administratorAuthenticationRequired`, and `dimseSecurity`. It does not grant access or return the complete policy. The `dicomwebAuthenticationRequired` value reflects the current request's actual socket; forwarded address headers are ignored.
 
 ## Connections and transfers
 

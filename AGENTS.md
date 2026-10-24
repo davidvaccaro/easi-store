@@ -7,7 +7,7 @@ EASI Store is an independent DICOM archive/server repository. EASI JS is the par
 - Use the existing EASI JS streaming selection/parser abstractions. Do not decode or retain pixel data merely to index metadata.
 - The SQLite database and filesystem form one archive; implement reconciliation for interruptions between their commits. Enforce a single writer per data directory.
 - Keep patient identity scoped by issuer/source. Matching a name alone must not merge patients.
-- All data/API routes require authorization. Keep local startup bound to loopback by default; do not introduce default credentials or wildcard CORS.
+- Administration APIs always require authorization. DICOMweb defaults to authenticated access; only an explicitly selected local-research profile may allow unauthenticated clients, restricted to literal loopback listeners and actual loopback socket peers. DIMSE uses its separately configured calling-AE/source-IP policy. Keep local startup bound to loopback by default; do not introduce default credentials or wildcard CORS.
 - Never modify `.env*` files, commit credentials, imaging corpora, local archive databases, or backups. Tests/demos must generate independent synthetic DICOM data.
 - An import into Store really uploads to the server. Product copy must distinguish this from standalone EASI View's local file viewing.
 - Do not call partial metadata complete, imply support for unimplemented transfer-syntax conversion, or claim full DICOMweb, Orthanc parity, clinical validation, or production qualification without evidence.

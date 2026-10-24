@@ -77,3 +77,36 @@ The [successful portable matrix on 2026-10-24](https://github.com/davidvaccaro/e
 The smoke now also uses an archive directory containing spaces, `&`, and `!` to exercise literal path handling. A baseline success does not certify every OS version or architecture; review the workflow run for the exact candidate being distributed.
 
 Signed installers, multi-node durability, sustained performance, broad independent modality interoperability, production deployment qualification, and full DICOMweb conformance remain release gates in [BACKLOG.md](BACKLOG.md).
+
+## Access-profile update — 0.2.1
+
+All 91 Store synthetic tests, TypeScript checks and the build/distribution guards
+pass for the access-profile update. Tests cover authenticated default behavior,
+loopback-only research DICOMweb and DIMSE access, protected administration,
+standard STOW without custom cookie-CSRF headers in research mode, persisted
+profile changes, exact AE/IP trust, no wildcard research exposure, and older
+backup compatibility. The viewer passes 2,184 tests including plain-name prefix
+matching, typed HTTP status preservation, safe sign-in links and retained state.
+
+Disposable Chrome passed 24 Store administration assertions: explicit saves,
+research versus authenticated client access, protected management, trusted-client
+validation/persistence/removal, Discard, accurate listener details, mobile layout,
+no runtime exceptions and no external traffic. Separate browser runs exercised
+both viewer protocols without cookies and actual image display/navigation; secure
+mode blocked subsequent unauthenticated requests immediately. Actual sign-in in
+separate tabs and expiry during admission retained criteria/checked studies for
+explicit retry without duplicate admission.
+
+The local archive was backed up offline before this update. All 2,992 original
+object hashes remained identical after upgrading; no medical files entered source,
+public test fixtures, or artifacts. Earlier 0.2.0 native package results above
+remain historical; current package qualification is recorded for its exact build.
+
+The macOS arm64 0.2.1 portable bundle with Node 24.22.1 passed inventory and
+checksum verification, launch with no system Node on PATH, generated-demo
+intake, nested metadata and byte-exact bulk/frame retrieval, protected routes,
+thumbnails, peer edits and transfer checkpoint persistence across restarts.
+The expanded smoke also switched to research access without credentials,
+verified management stayed protected, restarted and retained that profile,
+then restored authenticated access and verified anonymous QIDO returned 401.
+Artifact SHA-256: `423bf2af557cbcec5e3ff59747447f2ec295f8ab751d1c7c0de9678fb7702533`.

@@ -1,6 +1,6 @@
-# DICOMweb interoperability preview — 0.2.0
+# DICOMweb interoperability preview — 0.2.1
 
-EASI Store implements the core archive transactions plus bounded metadata and pixel retrieval. The target is eventual broad support for the released normative standard, implemented in explicit phases. The 0.2.0 preview is a **documented subset**, not a declaration of full PS3.18 or complete Studies Service conformance.
+EASI Store implements the core archive transactions plus bounded metadata and pixel retrieval. The target is eventual broad support for the released normative standard, implemented in explicit phases. The 0.2.x preview is a **documented subset**, not a declaration of full PS3.18 or complete Studies Service conformance.
 
 Reference baseline: [DICOM PS3.18, Web Services](https://dicom.nema.org/medical/dicom/current/output/chtml/part18/PS3.18.html), released 2026d when this implementation was started. A future release must pin/review its baseline rather than assume the `current` URL stays unchanged.
 
@@ -8,7 +8,7 @@ Base URL: `http://127.0.0.1:8048/dicomweb`.
 
 ## Transaction matrix
 
-| Transaction/resource | 0.2.0 profile |
+| Transaction/resource | 0.2.x profile |
 | --- | --- |
 | QIDO studies | Supported: `GET /studies` |
 | QIDO series within a study | Supported: `GET /studies/{study}/series` |
@@ -19,16 +19,23 @@ Base URL: `http://127.0.0.1:8048/dicomweb`.
 | DICOM JSON dataset metadata | Supported: study, series, and instance `/metadata`; nested sequences and functional groups retained within the bounded metadata profile |
 | XML metadata / metadata-plus-bulk STOW | Planned |
 | Selected frames | Supported: instance `/frames/{1-based-frame-list}`; native little-endian output or supported original compressed encoding |
-| Referenced bulk values | Supported: authenticated `BulkDataURI` values returned by metadata, including nested attribute paths |
+| Referenced bulk values | Supported: `BulkDataURI` values returned by metadata, including nested attribute paths; access follows the selected client profile |
 | Rendered resources, arbitrary transcoding | Planned |
 | WADO-URI | Planned legacy compatibility |
 | UPS/workitems/subscriptions and other advanced services | Later phases |
 
 `GET /api/v1/capabilities` is the runtime authority for the server's implemented subset. Unsupported media types or requested representations must produce an explicit error; returning different bytes under a claimed requested transfer syntax is not acceptable.
 
-## Authentication
+## Client access
 
-Complete setup in the browser. The library uses same-origin authenticated sessions; connected clients must authenticate before accessing any archive resource, including original files. Do not enable wildcard cross-origin access to make a client work.
+Store has two explicit client profiles, configured in **Administration → Client access** or through `--access-profile` at startup. The [access guide](ACCESS_CONTROL.md) describes persistence, configuration, and deployment boundaries.
+
+- **Authenticated** is the default. Every DICOMweb resource, including metadata, frames, bulk values, originals, STOW, and `OPTIONS`, requires an API Bearer token or a valid session cookie. Machine clients do not need an interactive browser sign-in.
+- **Local research** permits ordinary clients on actual loopback connections to use those DICOMweb transactions without credentials. Both HTTP and DIMSE listeners must bind to literal loopback addresses. Start with `node src/cli.js start --access-profile local-research`, or save the profile in Administration. The administrator interface and management API still require authentication.
+
+`GET /api/v1/access` reports minimal access requirements without returning patient information or peer configuration. A forwarded IP header cannot grant research access. Do not enable wildcard cross-origin access or publicly forward an unauthenticated research listener.
+
+The following authenticated examples use a cookie jar. In local research mode, omit the cookie option; normal non-browser STOW clients also do not need the custom `X-EASI-Store` header. Host validation and rejection of foreign browser-origin writes remain active in both profiles.
 
 For a command-line session, read a login JSON object from standard input so your password does not become a shell-history argument:
 
@@ -44,7 +51,7 @@ Type `{"username":"YOUR_USERNAME","password":"YOUR_PASSWORD"}`, then end input w
 
 For a persistent integration credential, stop Store and run `node src/cli.js token --label 'My local client'` with the same `--data-dir` when using a custom archive. It prints a new token once; save it privately and restart Store. Clients send `Authorization: Bearer TOKEN`. Tokens are stored as hashes; this initial CLI workflow is for a local administrator with archive filesystem access. Token issuance does not replace the future granular service-identity/RBAC design.
 
-Cookie-based mutations, including login and STOW, require **`X-EASI-Store: 1`** in addition to the authenticated cookie where applicable. This is part of the same-origin request protection. Bearer clients do not need that cookie-specific header.
+In authenticated mode, cookie-based mutations, including login and STOW, require **`X-EASI-Store: 1`** in addition to the authenticated cookie where applicable. This is part of the same-origin request protection. Bearer clients do not need that cookie-specific header. Management/login mutations keep their normal protections in local research mode too.
 
 ## Search
 
@@ -69,6 +76,8 @@ curl --fail-with-body --cookie /tmp/easi-store.cookies \
 Results are DICOM JSON datasets containing indexed query attributes, not Store's management JSON records. The preview recognizes keyword or tag-number matching for PatientName, PatientID, StudyInstanceUID, StudyDate, StudyDescription, Modality, SeriesInstanceUID, and SOPInstanceUID. It supports simple `*`/`?` text matching, StudyDate ranges, UID lists, `limit` (1–1000; default 100), and `offset`. `includefield` is limited to indexed keys; `includefield=all` is rejected. Unknown matching fields are rejected rather than silently ignored. Do not assume every optional QIDO key, fuzzy matching, timezone matching, or arbitrary return key is supported. An empty successful query returns an empty JSON array.
 
 Phase 2 also matches `IssuerOfPatientID`, `PatientBirthDate`, `AccessionNumber`, `ModalitiesInStudy`, `SeriesDescription`, `SeriesNumber`, and `InstanceNumber`. Birth/study dates accept ranges. `ModalitiesInStudy` matches modalities present anywhere in the study. `includefield` accepts repeated parameters or comma-separated indexed keywords/tag numbers; it augments the default returned attributes. Results use stable archive ordering and a `Warning` header when additional results are available. The supported QIDO hierarchy is studies → series in a study → instances in a series; do not assume flat all-series/all-instance searches are implemented.
+
+Direct queries retain DICOM matching semantics: `PatientName=Synthetic` is a whole-value match, while `PatientName=Synthetic*` matches names beginning with that text. The standalone EASI View search workflow adds a trailing wildcard to a plain surname for convenience; explicit `*`, `?`, `^`, or `=` name syntax is preserved. Patient IDs and selected-patient issuer criteria remain exact. Store does not silently broaden a direct client's query.
 
 ## Store an original instance
 
@@ -125,7 +134,7 @@ GET /studies/{study}/series/{series}/metadata
 GET /studies/{study}/series/{series}/instances/{instance}/metadata
 ```
 
-The EASI JS streaming handler extracts dataset attributes, including nested SQ items, enhanced-image functional groups, numeric VR values, and declared supported character sets. This is separate from the small indexed QIDO return set. File Meta Information is not included in dataset JSON. Binary values and large individual values become protected `BulkDataURI` references rather than being decoded or embedded as large JSON values. Existing originals are read on demand; an archive created by 0.1.0 does not need reimporting.
+The EASI JS streaming handler extracts dataset attributes, including nested SQ items, enhanced-image functional groups, numeric VR values, and declared supported character sets. This is separate from the small indexed QIDO return set. File Meta Information is not included in dataset JSON. Binary values and large individual values become `BulkDataURI` references governed by the same client access profile, rather than being decoded or embedded as large JSON values. Existing originals are read on demand; an archive created by 0.1.0 does not need reimporting.
 
 Metadata is bounded to 8 MiB per instance and per response, 100,000 attributes, and sequence depth 64. A metadata response may cover at most 10,000 instances and four metadata responses/readers run concurrently. Larger studies should request individual series or instances. Unsupported encodings, malformed numeric values, or unreadable structures return explicit errors rather than silently incomplete metadata.
 
@@ -142,7 +151,7 @@ Frame numbers are 1-based; duplicate/out-of-range values are rejected and a requ
 
 Original compressed frame retrieval recognizes JPEG, JPEG-LS, JPEG 2000, JPEG 2000 Part 2, HTJ2K, and DICOM RLE transfer syntaxes when frame boundaries are unambiguous. It returns their matching MIME type and original syntax; it does not decode or recompress them. A valid Basic Offset Table is supported. An empty table is supported for a single frame or one fragment per frame; ambiguous multi-fragment/multiframe data is explicitly rejected. Extended-offset-only indexing and video/container formats are not implemented. Fragment count is limited to 100,000 and each encoded frame to 64 MiB. Archival acceptance, original retrieval, selected frame retrieval, and viewer rendering are separate capabilities.
 
-Follow a returned `BulkDataURI` as an authenticated request, rather than constructing arbitrary filesystem paths. Nested bulk references use validated attribute/item paths. Native bulk output uses little-endian numeric words where conversion is required; compressed pixel bulk follows the original frame profile and is limited to 1,000 frames in a whole-pixel-bulk request. For larger multiframe images, request selected frames instead. Neither bulk nor frames are public URLs, and no wildcard CORS policy is enabled. A request for an unsupported media type or transfer syntax returns `406`; malformed data or resource limits return their explicit error status.
+Follow a returned `BulkDataURI` using the selected profile's credentials when required, rather than constructing arbitrary filesystem paths. Nested bulk references use validated attribute/item paths. Native bulk output uses little-endian numeric words where conversion is required; compressed pixel bulk follows the original frame profile and is limited to 1,000 frames in a whole-pixel-bulk request. For larger multiframe images, request selected frames instead. Bulk and frames follow the same access policy as other DICOMweb resources; no wildcard CORS policy is enabled. A request for an unsupported media type or transfer syntax returns `406`; malformed data or resource limits return their explicit error status.
 
 `OPTIONS /dicomweb` (or a DICOMweb resource) returns the implementation's JSON capabilities and allowed methods. This describes the preview and does not declare full normative service conformance. Management thumbnail PNGs are documented in [MANAGEMENT_API.md](MANAGEMENT_API.md), not claimed as standard DICOMweb rendered resources.
 
