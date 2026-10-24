@@ -46,7 +46,14 @@ system Node on PATH. It retained 12 generated demo instances plus one independen
 nested/multiframe fixture across three launches. Exact native frame and nested
 bulk bytes, metadata resources, protected routes, trusted proxy prefixes, PNG
 thumbnails, persistent peer CRUD and duplicate-safe queued STOW/WADO jobs passed.
-Windows/Linux 0.2.0 portable results are recorded separately after native CI.
+The [0.2.0 native portable matrix](https://github.com/davidvaccaro/easi-store/actions/runs/40125121830)
+passed on source `ea502317bd74b56d72f08b5c19e06a4775e6ebc9` for macOS ARM64,
+Windows x64 and Linux x64. Each passed all 81 tests, typecheck/build/distribution
+verification, bundled Node 24.22.1 packaging and the same expanded 13-instance
+installation/metadata/frame/bulk/thumbnail/peer/transfer/restart smoke. The separate
+[Linux check and Docker build](https://github.com/davidvaccaro/easi-store/actions/runs/40125122317)
+also passed. An earlier CI attempt exposed macOS-only temporary paths in four test
+files; these now use `os.tmpdir()` and the successful matrix includes that fix.
 
 The local 0.1.0 archive was upgraded after a private offline backup without
 reimporting images. Aggregate study/series/instance/byte counts were unchanged,
@@ -54,7 +61,7 @@ and all 2,992 original object SHA-256 hashes matched the backup after the upgrad
 No original images, identifiers, account data, or backup contents are included in
 source or artifacts.
 
-The protocol profiles still have explicit limits. Synthetic success and one independent peer do not certify every modality, SOP class, network condition, OS artifact, or full-standard option. The native portable matrix below is a **0.1.0 baseline**, not a claim that the 0.2.0 artifact has passed the same matrix.
+The protocol profiles still have explicit limits. Synthetic success and one independent peer do not certify every modality, SOP class, network condition, OS artifact, or full-standard option. The historical portable matrix below remains the **0.1.0 baseline**; the current 0.2.0 matrix is recorded above.
 
 ## Foundation 0.1.0 runtime checks on 2026-10-24
 

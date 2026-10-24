@@ -99,3 +99,14 @@ Get-FileHash .\easi-store-*.zip -Algorithm SHA256
 `ARTIFACT.json` records build contents and runtime provenance. A checksum detects mismatches; it does not establish who published the artifact unless you trust the source of the expected checksum.
 
 The manually triggered `.github/workflows/portable.yml` workflow tests, builds, and uploads candidate packages. It does not create a GitHub release, publish an npm/Docker package, or sign an installer. Those publication steps need a qualified release and an explicit publication decision.
+
+## Verified Phase 2 candidate
+
+[Native 0.2.0 CI](https://github.com/davidvaccaro/easi-store/actions/runs/40125121830)
+passed on macOS ARM64, Windows x64 and Linux x64. Each candidate passed all 81
+synthetic tests plus the expanded portable smoke with 13 generated instances,
+metadata/frame/bulk/thumbnail retrieval, authentication, persistent peer CRUD,
+queued STOW/WADO transfers and checkpoints across three launches. The bundles
+include verified official Node 24.22.1. These are preview portable archives;
+platform signing, notarization and native installer qualification remain future
+work. See [VALIDATION.md](VALIDATION.md) for the exact source and evidence.
