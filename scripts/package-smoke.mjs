@@ -92,7 +92,7 @@ try {
     const environment = { ...process.env, PATH: emptyPath, EASI_STORE_DATA_DIR: dataDir, EASI_STORE_PORT: String(port), EASI_STORE_DIMSE: 'off' };
     const command = process.platform === 'win32' ? process.env.ComSpec || 'C:\\Windows\\System32\\cmd.exe' : '/bin/sh';
     const args = process.platform === 'win32' ? ['/d', '/s', '/c', `call "${entry}"`] : [entry];
-    child = spawn(command, args, { cwd: bundle, env: environment, stdio: ['ignore', 'pipe', 'pipe'] });
+    child = spawn(command, args, { cwd: bundle, env: environment, stdio: ['ignore', 'pipe', 'pipe'], windowsVerbatimArguments: process.platform === 'win32' });
     child.stdout.on('data', bytes => { output = (output + bytes).slice(-8000); });
     child.stderr.on('data', bytes => { output = (output + bytes).slice(-8000); });
     let launchError;
