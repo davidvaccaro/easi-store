@@ -85,8 +85,8 @@ pass for the access-profile update. Tests cover authenticated default behavior,
 loopback-only research DICOMweb and DIMSE access, protected administration,
 standard STOW without custom cookie-CSRF headers in research mode, persisted
 profile changes, exact AE/IP trust, no wildcard research exposure, and older
-backup compatibility. The viewer passes 2,184 tests including plain-name prefix
-matching, typed HTTP status preservation, safe sign-in links and retained state.
+backup compatibility. Viewer tests cover plain-name prefix matching, typed HTTP status preservation,
+safe sign-in links and retained state.
 
 Disposable Chrome passed 24 Store administration assertions: explicit saves,
 research versus authenticated client access, protected management, trusted-client
@@ -110,3 +110,25 @@ The expanded smoke also switched to research access without credentials,
 verified management stayed protected, restarted and retained that profile,
 then restored authenticated access and verified anonymous QIDO returned 401.
 Artifact SHA-256: `423bf2af557cbcec5e3ff59747447f2ec295f8ab751d1c7c0de9678fb7702533`.
+
+The [0.2.1 native portable matrix](https://github.com/davidvaccaro/easi-store/actions/runs/40129497472)
+passed on macOS arm64, Windows x64 and Linux x64 at source commit
+`dd9bc8f7369ceca71246c8f4702fef4481c23f81`. Each native runner passed all 91 tests,
+TypeScript/build/distribution checks, runtime packaging with Node 24.22.1, and
+`package-smoke.mjs`, including explicit research access, protected administration,
+profile persistence across restart and return to authenticated mode. The
+[Linux check and Docker build](https://github.com/davidvaccaro/easi-store/actions/runs/40129484241)
+also passed for that commit.
+
+A disposable Linux arm64 Docker 0.2.1 image additionally passed runtime checks
+with generated data: nonroot UID 10001, read-only root, persistent archive volume,
+HTTP-only port publication and DIMSE bound to container loopback. Authenticated
+query/retrieve, byte-identical originals, nested metadata, frames, thumbnails,
+internal DIMSE echo and durable C-GET jobs succeeded. Selecting local research
+on the container's network HTTP listener was rejected without weakening the
+active policy. Restart retained the archive and invalidated the old browser
+session as expected. The disposable container and volume were removed.
+
+Verified native packages and a checksum receipt were retained locally under the
+ignored `artifacts/native-ci/access-dd9bc8f/` directory; the receipt pins the source
+commit, workflow and exact artifact digests. No private archive content is included.
