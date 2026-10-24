@@ -1,3 +1,5 @@
+import { tmpdir } from 'node:os';
+import { join as temporaryJoin } from 'node:path';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtemp, writeFile, rm, readFile } from 'node:fs/promises';
@@ -5,7 +7,7 @@ import { MetadataService } from '../src/dicomweb/MetadataService.js';
 import { advancedDicom, encodedElement, sequence, encapsulated } from './fixtures/advanced-dicom.js';
 
 async function file(t, fixture) {
-  const directory = await mkdtemp('/private/tmp/easi-metadata-test-');
+  const directory = await mkdtemp(temporaryJoin(tmpdir(), 'easi-metadata-test-'));
   const record = { ...fixture.record, path: `${directory}/original.dcm` };
   await writeFile(record.path, fixture.bytes);
   t.after(() => rm(directory, { recursive: true, force: true }));

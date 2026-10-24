@@ -1,3 +1,5 @@
+import { tmpdir } from 'node:os';
+import { join as temporaryJoin } from 'node:path';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { inflateSync } from 'node:zlib';
@@ -111,7 +113,7 @@ test('unsupported LUTs, malformed windows/layouts and unbounded output sizes fai
 });
 
 test('thumbnail worker cancellation/shutdown releases both worker and pixel reader slots', async t => {
-  const directory = await mkdtemp('/private/tmp/easi-thumbnail-worker-'), service = new ThumbnailService();
+  const directory = await mkdtemp(temporaryJoin(tmpdir(), 'easi-thumbnail-worker-')), service = new ThumbnailService();
   t.after(async () => { await service.close(); await rm(directory, { recursive: true, force: true }); });
   const input = advancedDicom({ rows: 1024, columns: 1024 }), record = { ...input.record, path: `${directory}/synthetic.dcm` }; await writeFile(record.path, input.bytes);
   const controller = new AbortController(); controller.abort(new Error('synthetic cancellation'));
@@ -122,7 +124,7 @@ test('thumbnail worker cancellation/shutdown releases both worker and pixel read
 });
 
 test('authenticated thumbnail HTTP endpoints produce PNGs for original native frames and block unauthenticated access', async t => {
-  const dataDir = await mkdtemp('/private/tmp/easi-thumbnail-http-');
+  const dataDir = await mkdtemp(temporaryJoin(tmpdir(), 'easi-thumbnail-http-'));
   const app = await createStoreServer({ dataDir, port: 0 }); const address = await app.listen(), base = `http://127.0.0.1:${address.port}`;
   t.after(async () => { await app.close(); await rm(dataDir, { recursive: true, force: true }); });
   await app.auth.setup({ username: 'synthetic', password: 'synthetic-thumbnail-password' }, '127.0.0.1');

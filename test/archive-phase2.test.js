@@ -1,3 +1,5 @@
+import { tmpdir } from 'node:os';
+import { join as temporaryJoin } from 'node:path';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { Readable } from 'node:stream';
@@ -6,7 +8,7 @@ import { Archive } from '../src/archive/Archive.js';
 import { createDicom, uid } from './fixtures/synthetic.js';
 
 test('remote retrieval validates study, series and instance identities before durable catalog admission', async t => {
-  const dataDir = await mkdtemp('/private/tmp/easi-scope-identity-'), archive = await Archive.open({ dataDir });
+  const dataDir = await mkdtemp(temporaryJoin(tmpdir(), 'easi-scope-identity-')), archive = await Archive.open({ dataDir });
   t.after(async () => { await archive.close(); await rm(dataDir, { recursive: true, force: true }); });
   const identity = { studyUid: uid(), seriesUid: uid(), sopUid: uid() }, bytes = createDicom(identity);
   await assert.rejects(archive.ingest(Readable.from([bytes]), {

@@ -1,3 +1,5 @@
+import { tmpdir } from 'node:os';
+import { join as temporaryJoin } from 'node:path';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
@@ -12,7 +14,7 @@ import { createDicom, uid } from './fixtures/synthetic.js';
 import { advancedDicom, encodedElement, sequence, encapsulated } from './fixtures/advanced-dicom.js';
 
 async function fixture(t, options = {}) {
-  const dataDir = await mkdtemp('/private/tmp/easi-web-phase2-');
+  const dataDir = await mkdtemp(temporaryJoin(tmpdir(), 'easi-web-phase2-'));
   const archive = await Archive.open({ dataDir }), metadataService = new MetadataService();
   const server = createServer(async (req, res) => { if (!await handleDicomweb(req, res, { archive, metadataService, ...options })) { res.writeHead(404); res.end(); } });
   server.listen(0, '127.0.0.1'); await once(server, 'listening');
