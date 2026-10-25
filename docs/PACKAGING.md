@@ -21,12 +21,12 @@ Compose publishes HTTP on **127.0.0.1:8048**, uses a persistent named volume, ru
 To build without Compose:
 
 ```sh
-docker build --tag easi-store:0.2.1-preview .
+docker build --tag easi-store:0.3.0-preview .
 docker volume create easi-store-archive
 docker run --rm --init --name easi-store \
   --publish 127.0.0.1:8048:8048 \
   --mount source=easi-store-archive,target=/data \
-  easi-store:0.2.1-preview
+  easi-store:0.3.0-preview
 ```
 
 This builds an image locally. No Docker Hub/GHCR image publication is implied. The image recipe follows the Node 24 base image; a qualified release should additionally record the resolved base-image digest and scan the image it actually publishes.
@@ -60,7 +60,7 @@ npm run artifact:pack -- --bundle-runtime \
   --output /absolute/path/to/release-artifacts
 ```
 
-Recognized targets are `darwin-arm64`, `darwin-x64`, `linux-arm64`, `linux-x64`, `win32-arm64`, and `win32-x64`. Recognition means the packager knows the official Node distribution name; it is not evidence that Store has passed native tests on all six targets. The historical **0.1.0** [native macOS, Windows, and Linux matrix passed](https://github.com/davidvaccaro/easi-store/actions/runs/40103493426) on 2026-10-24, including its 27-test suite and actual runtime-bundled launcher smoke checks. Local macOS ARM64 baseline packaging also passed. Those results do not certify a changed 0.2.0 package. See [candidate-specific validation evidence](VALIDATION.md), and review the exact run and actual CPU architecture before publishing a candidate.
+Recognized targets are `darwin-arm64`, `darwin-x64`, `linux-arm64`, `linux-x64`, `win32-arm64`, and `win32-x64`. Recognition means the packager knows the official Node distribution name; it is not evidence that Store has passed native tests on all six targets. The historical **0.1.0** [native macOS, Windows, and Linux matrix passed](https://github.com/davidvaccaro/easi-store/actions/runs/40103493426) on 2026-10-24, including its 27-test suite and actual runtime-bundled launcher smoke checks. Local macOS ARM64 baseline packaging also passed. Those results do not certify a changed 0.3.0 package. See [candidate-specific validation evidence](VALIDATION.md), and review the exact run and actual CPU architecture before publishing a candidate.
 
 The packager:
 
@@ -73,7 +73,7 @@ The packager:
 
 The runtime checksum is verified against the official manifest fetched over HTTPS. This preview does not claim independent verification of Node's release-signature chain. A signed release pipeline should add that trust step and artifact provenance.
 
-The smoke check extracts a package created by this build, verifies its complete file inventory and runtime version, and runs its actual entry launcher with no system Node on `PATH`. It creates an isolated synthetic archive, imports 12 demo instances, restarts the service, and checks persisted counts. Run it only on your trusted current-platform artifact. It is not a general-purpose sandbox for untrusted downloads.
+The smoke check extracts a package created by this build, verifies its complete file inventory and runtime version, and runs its actual entry launcher with no system Node on `PATH`. It creates an isolated synthetic archive with 12 demo instances and an independent nested/multiframe object, checks protocol/transfer/access persistence, verifies a streamed ZIP and original SHA-256 manifest, removes only the independent study with typed confirmation, checks physical reclamation, and restarts to verify all 12 unselected originals remain. Run it only on your trusted current-platform artifact. It is not a general-purpose sandbox for untrusted downloads.
 
 Without `--bundle-runtime`, an artifact ends in `-requires-node24`; its user must install Node 24. A runtime bundle includes production dependencies, so normal startup needs neither npm installation nor an internet connection. Source/test/build tools are not required to run it.
 

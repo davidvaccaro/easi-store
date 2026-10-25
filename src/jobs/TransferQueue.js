@@ -39,6 +39,7 @@ export class TransferQueue {
   }
   retry(id) {
     if(this.closing)throw httpError(503,'Transfers are shutting down.');
+    this.service.archive?.assertAvailableForMutation?.();
     const job=this.get(id);if(!['failed','canceled'].includes(job.state))throw httpError(409,'Only failed or canceled transfers can be retried.');
     const peer=this.service.get(job.connectionId);if(peer.revision!==job.connectionRevision)throw httpError(409,'The connection changed since this transfer was created. Create a new transfer to confirm the new destination.');
     this.db.prepare("UPDATE transfer_items SET state='pending',outcome='' WHERE jobId=? AND state!='done'").run(id);

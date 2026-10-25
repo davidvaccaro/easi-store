@@ -4,7 +4,7 @@
 
 EASI Store is an independent server project in the EASI family. Import DICOM instances, find a patient or examination, browse its series, open an image, and exchange studies with configured DICOMweb or DIMSE archives. Original HTTP/file imports are preserved byte for byte; DIMSE preserves the transmitted dataset and creates Part 10 file metadata. The catalog is stored in SQLite and image objects live on disk.
 
-**Status: 0.2.1 Phase 2 interoperability preview.** Query/Retrieve, connected archives, durable transfer jobs, nested DICOM JSON metadata, frames/bulk retrieval, and thumbnails are available. This update separates local research client access from administrator sign-in and documents explicit DIMSE peer trust. It is not Orthanc feature parity or a production-qualified PACS. [Current status](docs/STATUS.md), [DICOMweb](docs/DICOMWEB.md), and [DIMSE](docs/DIMSE.md) distinguish the implemented profiles from the full standards. [The backlog](docs/BACKLOG.md) records the path to a complete product.
+**Status: 0.3.0 v1 workflow preview.** Query/Retrieve, connected archives, durable transfers, metadata/frames/bulk retrieval, and thumbnails are available. This milestone adds metadata-first viewing for large series, streamed original-study ZIP exports with SHA-256 manifests, and confirmed study removal with interrupted-removal recovery. It is not Orthanc feature parity or a production-qualified PACS. [Current status](docs/STATUS.md), [DICOMweb](docs/DICOMWEB.md), and [DIMSE](docs/DIMSE.md) distinguish the implemented profiles from the full standards. [The backlog](docs/BACKLOG.md) records the path to a complete product.
 
 ## Start with Docker
 
@@ -61,9 +61,12 @@ For a package with no Node installation step, see [portable packaging](docs/PACK
 1. Complete first-run setup and sign in.
 2. Add the built-in **synthetic demo**, or import your own DICOM files. Extensionless DICOM instances are valid inputs.
 3. Search the library, open a study, and inspect its series and instances.
-4. Open an instance in the embedded EASI View; navigate, adjust the display, or measure within the viewer's supported image profiles.
-5. Check Activity to review persisted import outcomes. Reimporting an identical instance is idempotent; a conflicting instance with the same SOP Instance UID is rejected rather than overwriting the original.
-6. Restart Store and confirm the study remains available.
+4. Open an instance or series in EASI View. Metadata loads first; originals load as you navigate instead of downloading a whole series before the first image. Adjust the display or measure within the viewer's supported profiles and resource limits.
+5. Choose **Export originals** to download original DICOM files in a streamed ZIP with an integrity manifest. Identifiers remain; this is not anonymization or a full archive backup. The browser manages download progress.
+6. To reclaim space, choose **Remove study**, review the instance count and byte total, and type **DELETE**. Only Store's archival copies are removed. This is irreversible without a backup; source files and remote archives are unchanged. Active readers/imports/transfers can block removal.
+7. Check Activity for import/removal outcomes. Identical reimports are idempotent; a conflicting SOP Instance UID is rejected instead of overwriting the original. Restart Store and confirm retained studies remain available.
+
+[Study management](docs/STUDY_MANAGEMENT.md) explains lazy loading, export verification, deletion guardrails, and recovery. **Upgrade note:** 0.3.0 migrates the catalog from schema 1 to schema 2. Stop Store and take a verified full backup with the old build before upgrading. An older build cannot open the upgraded archive; rollback requires restoring that backup into a separate directory.
 
 To exchange studies, open **Connections → Add connection**. Choose DICOMweb or DIMSE, save its address and protocol settings, and run **Test**. **Search studies → Retrieve study** copies selected remote objects into this archive. To send originals out, open a local study and choose **Send study**, **Send series**, or an individual instance's **Send** action. **Activity → Transfers** shows persisted progress, retry, and cancellation. Use generated data for an initial connection test, and confirm the configured destination is authorized before sending medical data.
 
@@ -120,7 +123,7 @@ Tests generate independent synthetic DICOM bytes. They do not require a private 
 
 ## Roadmap
 
-Phase 2 establishes everyday search/retrieve/send workflows with explicit protocol and resource limits. The next product phase is collections, labels, research import/export, anonymization profiles, routing, and migration; standards expansion and production qualification continue separately. PostgreSQL, S3-compatible storage, worklists, Storage Commitment, XML/rendered DICOMweb, and signed installers remain explicit planned work. They are not silently enabled by a configuration flag. The full [phased backlog](docs/BACKLOG.md) defines the release gates.
+The 0.3.0 milestone completes the initial large-study viewing, original ZIP export, and confirmed storage-cleanup workflows. Stable v1 preparation now focuses on exact-candidate recovery/backup/upgrade and resource qualification, independent interoperability, installation, and operational documentation. Collections, labels, DICOMDIR export, anonymization, routing, and migration remain later product work; standards expansion continues separately. PostgreSQL, S3-compatible storage, worklists, Storage Commitment, XML/rendered DICOMweb, and signed installers remain explicit planned work. They are not silently enabled by a configuration flag. The full [phased backlog](docs/BACKLOG.md) defines the release gates.
 
 ## License
 

@@ -1,11 +1,12 @@
-# EASI Store status — 0.2.1
+# EASI Store status — 0.3.0
 
-**Phase 2 interoperability preview.** EASI Store is a working, independent, single-host archive. It is source available under the Community License; it is not a claim of full DICOM conformance, Orthanc parity, or production/clinical qualification.
+**V1 workflow preview.** EASI Store is a working, independent, single-host archive. It is source available under the Community License; it is not a claim of full DICOM conformance, Orthanc parity, or production/clinical qualification.
 
 | Area | Implemented |
 | --- | --- |
 | Archive | Bounded disk-backed imports, SHA-256 integrity, explicit duplicate/conflict outcomes, crash recovery, SQLite single-writer protection, offline backup/restore |
-| Library | Patient/study/series/instance browsing, search, lazy management thumbnails, published independent EASI View SDK |
+| Library | Patient/study/series/instance browsing, search, lazy management thumbnails, metadata-first/on-demand series viewing through the published EASI View SDK |
+| Study management | Streamed ZIP/ZIP64 original export with SHA-256 manifest; preview/revision/typed confirmation for removal, auditable counts and interrupted-removal recovery |
 | DICOMweb | Indexed QIDO hierarchy; binary Part 10 STOW; original WADO; nested JSON metadata; supported native/original-compressed frame and referenced-bulk retrieval |
 | DIMSE server | Verification / Storage, Study Root and Patient Root FIND / GET / configured-destination MOVE, pending/final statuses, cancellation, durable receiving |
 | Connected archives | Named DICOMweb/DIMSE peers, connection tests, remote study searches, explicit send/retrieve workflows |
@@ -22,6 +23,6 @@ HTTP/file imports preserve their original Part 10 bytes. DIMSE transmits dataset
 
 ## Next work
 
-The next product milestone is Phase 3: collections/labels, research import/export, controlled anonymization, routing, and migration. Protocol qualification and standards expansion continue alongside that work. Whole-instance transcoding, XML metadata/STOW, standard rendered resources, WADO-URI, UPS/workitems, worklists, MPPS, Storage Commitment, DICOM TLS, PostgreSQL/S3, OIDC/RBAC, automatic routing, and signed installers remain planned.
+The 0.3.0 milestone adds the everyday study workflows described in [STUDY_MANAGEMENT.md](STUDY_MANAGEMENT.md). The next release step is qualification of the exact candidate: resource/cancellation limits, backup/restore/upgrade, independent protocol clients, operational guidance, and clean installations. Schema 2 requires a full pre-upgrade backup; rollback uses that backup rather than an older runtime on the upgraded catalog. Collections/labels, DICOMDIR export, controlled anonymization, routing, and migration remain later Phase 3 work. Protocol qualification and standards expansion continue alongside that work. Whole-instance transcoding, XML metadata/STOW, standard rendered resources, WADO-URI, UPS/workitems, worklists, MPPS, Storage Commitment, DICOM TLS, PostgreSQL/S3, OIDC/RBAC, automatic routing, and signed installers remain planned.
 
-Stable 1.0 still requires the release gates in [BACKLOG.md](BACKLOG.md), including qualification of the exact candidate. Historical 0.1.0 and 0.2.0 results do not certify a changed 0.2.1 artifact. [VALIDATION.md](VALIDATION.md) separates baseline evidence from checks of the current candidate.
+Stable 1.0 still requires the release gates in [BACKLOG.md](BACKLOG.md), including qualification of the exact candidate. Historical 0.1.0–0.2.1 results do not certify a changed 0.3.0 artifact. [VALIDATION.md](VALIDATION.md) separates baseline evidence from checks of the current candidate.

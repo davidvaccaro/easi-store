@@ -85,3 +85,50 @@
 .access-settings form>.inline-error,.access-settings form>.inline-success{margin-top:17px;font-size:11px}
 @media(max-width:1100px){.access-heading{flex-wrap:wrap}.access-heading>.outline-pill{margin-top:0}.access-profiles{gap:11px}.access-profile{padding:15px}.access-profile strong{font-size:12px}.access-peer-fields{grid-template-columns:1fr 1.3fr}.access-peer-fields>.button{grid-column:1/-1;justify-self:end}.access-footer{align-items:flex-start;flex-wrap:wrap}.access-footer>.button-row{margin-left:auto}}
 @media(max-width:700px){.access-profiles{grid-template-columns:1fr}.access-settings .access-heading h2{font-size:19px}.access-settings .access-intro{font-size:10px}.access-heading>.outline-pill{font-size:8px}.access-profile strong{font-size:13px}.access-profile>span>span{font-size:10px}.access-dimse{padding:14px}.access-dimse>summary{font-size:10px}.access-dimse>summary>span{font-size:8px}.access-peer-fields{grid-template-columns:1fr}.access-peer-fields input{font-size:12px}.access-peer-list th,.access-peer-list td{padding-inline:10px}.access-peer-list code{font-size:9px}.access-footer>.button-row{gap:7px}.access-footer .button{font-size:10px;padding:10px 12px}}
+
+/* Complete original-study workflows; identifiers stay visible only in this UI. */
+.study-management-actions { gap: 9px; align-items: center; flex-wrap: wrap; }
+.study-management-actions > span { margin-right: auto; max-width: 380px; color: var(--muted); font-size: 9px; line-height: 1.8; }
+.study-management-actions .button { white-space: nowrap; }
+.study-row-actions { display: flex; justify-content: flex-end; gap: 3px; }
+.study-table th:last-child, .study-table td:last-child { width: 112px; padding-right: 16px; }
+.button.danger { color: #f0c2ac; border-color: #975f4e; background: #492c27; }
+.button.danger:hover:not(:disabled) { color: #fff; border-color: #c1836a; background: #653b30; }
+.button.danger-quiet, .icon-button.danger-quiet { color: #b49283; background: transparent; }
+.button.danger-quiet { border-color: #604940; }
+.button.danger-quiet:hover:not(:disabled), .icon-button.danger-quiet:hover:not(:disabled) { color: #f2bd9e; border-color: #97664f; background: #55372b55; }
+.remove-study-modal { width: 690px; }
+.removal-study-summary { padding: 17px 18px; border: 1px solid #344b43; border-radius: 7px; background: #13251f; margin-bottom: 21px; }
+.removal-study-summary > strong { font-size: 14px; font-weight: 550; }
+.removal-study-summary > span { display: block; margin-top: 7px; color: #8da89a; font-size: 10px; }
+.removal-study-summary p { margin-top: 15px; color: #c6d8cb; font-size: 12px; line-height: 1.7; }
+.removal-study-summary small { display: block; margin-top: 6px; font-size: 10px; color: #829d8b; }
+.removal-counts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px 22px; padding: 0 2px 22px; margin: 0; }
+.removal-counts dt { margin-bottom: 6px; color: #869f93; font-size: 10px; }
+.removal-counts dd { margin: 0; font: 18px var(--mono); color: #d1ded2; }
+.removal-warning { display: flex; gap: 12px; align-items: flex-start; padding: 16px; border: 1px solid #705342; background: #3d2c2255; border-radius: 6px; color: #dbb492; }
+.removal-warning > svg { flex-shrink: 0; margin-top: 3px; }
+.removal-warning p { color: #c0a78f; font-size: 10px; line-height: 1.9; }
+#remove-study-form { margin-top: 22px; }
+#remove-study-form label { display: flex; flex-wrap: wrap; gap: 0 5px; align-items: baseline; color: #c3d3c7; font-size: 11px; }
+#remove-study-form label > strong { color: #ebbd9c; font: 600 11px var(--mono); }
+#remove-study-form input { flex-basis: 100%; width: 100%; min-width: 0; margin-top: 10px; min-height: 42px; border: 1px solid #655044; border-radius: 5px; background: #0e171d; color: #e1c5b3; font: 13px var(--mono); padding: 10px 12px; }
+#remove-study-form input::placeholder { color: #725e51; }
+.remove-study-modal .inline-error { margin-top: 18px; }
+.remove-study-modal .inline-error p { margin: 8px 0 12px; font-size: 10px; line-height: 1.7; }
+.removal-complete, .removal-pending { padding: 15px 0 9px; color: #8bc5a6; }
+.removal-complete h3, .removal-pending h3 { margin: 18px 0 12px; font-size: 19px; line-height: 1.5; }
+.removal-complete p, .removal-pending p { color: #9bb3a5; font-size: 11px; line-height: 1.9; margin: 10px 0; }
+.removal-pending { color: #e1ba8f; }
+@media (max-width: 700px) {
+  .study-management-actions { gap: 8px; justify-content: flex-start; }
+  .study-management-actions > span { width: 100%; max-width: none; font-size: 9px; margin-bottom: 3px; }
+  .study-management-actions .button { font-size: 9px; padding: 9px 10px; }
+  .study-row-actions { gap: 1px; }
+  .study-row-actions .icon-button { width: 27px; height: 28px; }
+  .study-table td:last-child, .study-table th:last-child { padding-right: 10px; width: 92px; }
+  .removal-counts { gap: 17px 16px; }
+  .removal-counts dd { font-size: 16px; }
+  .remove-study-modal .modal-footer > .button-row { flex-wrap: wrap; justify-content: flex-end; }
+  .remove-study-modal .modal-footer .button { font-size: 10px; }
+}

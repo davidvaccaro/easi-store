@@ -9,6 +9,7 @@ import { spawn } from 'node:child_process';
 import { createServer } from 'node:net';
 import { setTimeout as delay } from 'node:timers/promises';
 import { pathToFileURL } from 'node:url';
+import { readZip } from '../test/fixtures/independent-zip.js';
 
 let artifact = process.argv[2];
 if (artifact === '--latest') {
@@ -261,8 +262,31 @@ try {
   response = await mutation('login',credentials); if (!response.ok) throw new Error('Portable administrator could not reauthenticate.');cookie=response.headers.get('set-cookie')?.split(';')[0];
   await setProfile('authenticated');
   if ((await fetch(`${base}/dicomweb/studies`)).status !== 401) throw new Error('Returning to authenticated mode did not protect subsequent client requests.');
+  const studyPath = `${base}/api/v1/studies/${sample.studyUid}`;
+  const exported = await fetch(studyPath + '/export', {headers:{Cookie:cookie}});
+  if (exported.status !== 200 || exported.headers.get('content-type') !== 'application/zip') throw new Error('Portable original study ZIP export failed.');
+  const zip = readZip(Buffer.from(await exported.arrayBuffer())), inventory = JSON.parse(zip.entries.get('manifest.json').data);
+  if (inventory.instanceCount !== 1 || inventory.anonymized !== false || inventory.productVersion !== manifest.version) throw new Error('Portable export manifest has incorrect scope/version.');
+  const exportedEntry = inventory.instances[0];
+  if (exportedEntry.sopUid !== sample.sopUid || exportedEntry.bytes !== enhanced.length || exportedEntry.sha256 !== createHash('sha256').update(enhanced).digest('hex') || !zip.entries.get(exportedEntry.path).data.equals(enhanced)) throw new Error('Portable export changed original bytes or hashes.');
+  for (const suffix of ['/export','/deletion-preview']) if ((await fetch(studyPath + suffix)).status !== 401) throw new Error('Portable study management allowed an unauthenticated request.');
+  const preview = await checkedJson(await fetch(studyPath + '/deletion-preview',{headers:{Cookie:cookie}}));
+  if (preview.instanceCount !== 1 || preview.seriesCount !== 1 || preview.bytes !== enhanced.length) throw new Error('Portable removal preview is incorrect.');
+  const removeStudy = confirmation => fetch(studyPath,{method:'DELETE',headers:{Cookie:cookie,'X-EASI-Store':'1','Content-Type':'application/json'},body:JSON.stringify({confirmation,revision:preview.revision})});
+  if ((await removeStudy('delete')).status !== 400) throw new Error('Portable removal accepted an invalid confirmation.');
+  const removal = await checkedJson(await removeStudy('DELETE'));
+  if (!removal.deleted || removal.reclamationPending || removal.reclaimedBytes !== enhanced.length) throw new Error('Portable removal did not reclaim the selected original.');
+  await stop(); await launch();
+  response = await mutation('login',credentials); if (!response.ok) throw new Error('Portable post-removal login failed.');cookie=response.headers.get('set-cookie')?.split(';')[0];
+  const cleaned = await checkedJson(await fetch(`${base}/api/v1/summary`,{headers:{Cookie:cookie}}));
+  if (cleaned.instances !== demo.instances || cleaned.bytes !== demo.bytes) throw new Error('Portable removal changed unselected studies or did not persist.');
+  const records = await checkedJson(await fetch(`${base}/api/v1/activity`,{headers:{Cookie:cookie}}));
+  if (!records.items.some(item=>item.outcome==='study-deleted')) throw new Error('Portable removal did not leave a persisted activity record.');
+  const shards = await readdir(path.join(dataDir,'objects'),{withFileTypes:true});let originalsOnDisk=0;
+  for (const shard of shards.filter(item=>item.isDirectory())) originalsOnDisk+=(await readdir(path.join(dataDir,'objects',shard.name))).filter(name=>name.endsWith('.dcm')).length;
+  if (originalsOnDisk !== demo.instances) throw new Error('Portable removal left the selected original on disk.');
   await stop();
-  console.log(JSON.stringify({ artifact: archivePath, sha256: await digest(archivePath), target, runtime: runtimeVersion, version: manifest.version, inventoryFilesVerified: manifest.files.length, systemNodeAvailableToLauncher: false, setup: 'passed', syntheticDemoInstances: demo.instances, syntheticInstances: finalSummary.instances, restartPersistence: 'passed', dicomweb: { query: 'passed', nestedMetadata: 'passed', pixelAndNestedBulk: 'passed', exactNativeFrames: 'passed', protectedRoutes: 'passed', trustedPublicPrefix: 'passed' }, thumbnails: 'passed', configuredPeerCrudAndPersistence: 'passed', duplicateSafeStowSend: 'passed', duplicateSafeWadoRetrieve: 'passed', transferCheckpointPersistence: 'passed', explicitResearchAccessAndPersistence: 'passed', protectedAdministration: 'passed', authenticatedModeRestored: 'passed' }, null, 2));
+  console.log(JSON.stringify({ artifact: archivePath, sha256: await digest(archivePath), target, runtime: runtimeVersion, version: manifest.version, inventoryFilesVerified: manifest.files.length, systemNodeAvailableToLauncher: false, setup: 'passed', syntheticDemoInstances: demo.instances, syntheticInstances: finalSummary.instances, retainedAfterRemoval:cleaned.instances, originalStudyZipAndManifest:'passed', confirmedRemovalAndDiskReclamation:'passed', removalRestartPersistence:'passed', restartPersistence: 'passed', dicomweb: { query: 'passed', nestedMetadata: 'passed', pixelAndNestedBulk: 'passed', exactNativeFrames: 'passed', protectedRoutes: 'passed', trustedPublicPrefix: 'passed' }, thumbnails: 'passed', configuredPeerCrudAndPersistence: 'passed', duplicateSafeStowSend: 'passed', duplicateSafeWadoRetrieve: 'passed', transferCheckpointPersistence: 'passed', explicitResearchAccessAndPersistence: 'passed', protectedAdministration: 'passed', authenticatedModeRestored: 'passed' }, null, 2));
 } finally {
   await stop();
   await rm(scratch, { recursive: true, force: true });

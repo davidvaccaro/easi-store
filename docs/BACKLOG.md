@@ -25,18 +25,25 @@ The source, tests, and runtime capabilities determine what has actually shipped;
 - Expanded QIDO indexed matching/return keys, comma/repeated `includefield`, pagination and stable ordering.
 - Nested JSON dataset metadata and protected referenced values; supported native/original-compressed frame retrieval with explicit resource/fragment limits.
 - Native little-endian frame/word conversion. Whole-instance conversion and compressed transcoding remain unimplemented; stored representations remain preserved.
-- Bounded instance/series management thumbnails and independent EASI View connection integration. Embedded whole-series loading remains limited to its current 128 MiB / 2,000-frame profile; this is not unlimited study buffering.
+- Bounded instance/series management thumbnails and independent EASI View connection integration. The 0.3.0 embedded path now uses metadata-first/on-demand instance loading instead of whole-series buffering; SDK per-object, decoded-cache, metadata, and stack limits still apply.
 - Named DICOMweb/DIMSE peers, real connection tests, remote search, and persistent queued sends/retrievals with instance checkpoints, restart, manual retry, cancellation, and destination revision guards.
 
 **Continuing interoperability work:** broader independent clients/modalities and negotiated syntax coverage, remote C-MOVE initiation, optional/relational query profiles, better job scheduling/retention and timed retries, larger-study viewer workflow qualification, DICOM TLS, and production network identity. Follow [STATUS.md](STATUS.md), [DICOMWEB.md](DICOMWEB.md), [DIMSE.md](DIMSE.md), and candidate-specific [VALIDATION.md](VALIDATION.md).
 
 EASI JS's existing DIMSE client/receiver support does not automatically provide a production Store SCP. A receiver that acknowledges before persistence must not be used unchanged as a durable archive listener.
 
+## V1 everyday workflows — implemented in 0.3.0 preview
+
+- Metadata-first series opening via the published EASI View archive SDK; navigation loads requested originals, including exact-instance selection and cancellation.
+- Authenticated streaming ZIP/ZIP64 original study export, bounded snapshots/concurrency, UID-only paths, and SHA-256 integrity manifest; no anonymization or DICOMDIR generation.
+- Authenticated study removal with fresh count/byte preview, revision checking, exact typed confirmation, active import/read/transfer guards, original hash verification, activity counts, and durable interrupted-removal recovery. Schema 2 migration requires pre-upgrade backup.
+- These workflows are subject to the candidate evidence in [VALIDATION.md](VALIDATION.md). They do not establish stable 1.0 or production/clinical qualification.
+
 ## Phase 3 — research and data management
 
 - Collections and labels that reference archived instances without duplicating them.
 - Safe import from folders/media/DICOMDIR and resumable bulk import manifests.
-- Exports with DICOMDIR/ZIP where appropriate; integrity reports and deterministic selection.
+- Original study ZIP/ZIP64 with integrity manifests is implemented in 0.3.0. DICOMDIR/media exports, richer selections, resumable delivery, and collections remain planned.
 - Anonymization profiles based on PS3.15 Annex E, UID/reference consistency, dates, private attributes, and provenance. Burned-in text, documents, graphics, and pixel content need explicit handling; deleting a few tags is not complete anonymization.
 - Conflict/alternate-representation review, protected studies, quotas, retention, and auditable destructive actions.
 - Routing rules and subscriptions/webhooks with durable retry semantics.

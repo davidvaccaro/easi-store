@@ -15,7 +15,7 @@ test('C-STORE response stays pending while durable persistence has not completed
   const gate = new Promise(resolve => { release = resolve; });
   const began = new Promise(resolve => { started = resolve; });
   const scp = new StorageScp({
-    archive: { async ingest(readable, options) { started(); await gate; return archive.ingest(readable, options); } },
+    archive: { acquireImportReservation: () => archive.acquireImportReservation(), async ingest(readable, options) { started(); await gate; return archive.ingest(readable, options); } },
     auth: { record: { username: 'synthetic' } }, port: 0,
   });
   const address = await scp.listen();

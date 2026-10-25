@@ -9,6 +9,7 @@ import { Archive } from './archive/Archive.js';
 import { handleDicomweb } from './dicomweb/router.js';
 import { Auth, isLoopback } from './http/Auth.js';
 import { AccessPolicy, isLoopbackAddress } from './http/AccessPolicy.js';
+import { createStudyExportService } from './exports/StudyExport.js';
 import { json, httpError, readJson } from './http/utils.js';
 import { createDemoStudy } from './synthetic.js';
 import { ConnectionService, handleConnectionRoutes } from './connections/ConnectionService.js';
@@ -19,7 +20,7 @@ const root = fileURLToPath(new URL('../', import.meta.url));
 const mime = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8',
     '.json': 'application/json', '.svg': 'image/svg+xml', '.png': 'image/png', '.wasm': 'application/wasm', '.txt': 'text/plain; charset=utf-8' };
 export const CAPABILITIES = {
-    name: 'EASI Store', version: VERSION, status: 'Phase 2 interoperability preview', standardBaseline: 'DICOM PS3.18 2026d',
+    name: 'EASI Store', version: VERSION, status: 'v1 workflow preview', standardBaseline: 'DICOM PS3.18 2026d',
     dicomweb: { basePath: '/dicomweb', qido: ['studies', 'series', 'instances'],
         stow: ['multipart/related; type="application/dicom"'], wado: ['original instances', 'original series', 'original studies'],
         transcoding: { completeInstance: false, nativeFrames: 'Little Endian word conversion; original compressed frames preserved' },
@@ -28,7 +29,9 @@ export const CAPABILITIES = {
         duplicates: 'Byte-identical reimports are idempotent; conflicting SOP Instance UIDs are rejected.',
         originalBytesPreserved: true, patientIdentity: 'Patient ID + issuer; missing issuer scoped to source.' },
     security: { localAdmin: true, apiBearerTokens: true, externalIdentity: false },
-    viewer: { name: 'EASI View', version: '1.0.0-rc.1', releaseCandidate: true },
+    viewer: { name: 'EASI View', version: '1.0.0-rc.1', releaseCandidate: true, loading: 'Metadata-first DICOMweb; requested originals loaded on demand' },
+    management: { originalStudyExport: 'Streaming ZIP/ZIP64 with SHA-256 manifest',
+        studyRemoval: { previewRequired: true, confirmation: 'DELETE', scope: 'Store archival copies only' } },
     dimse: { enabled: false, roles: ['C-ECHO SCP/SCU', 'C-STORE SCP/SCU', 'C-FIND SCP/SCU', 'C-GET SCP/SCU', 'C-MOVE SCP'],
         queryRetrieve: ['Study Root', 'Patient Root'], moveDestinations: 'Explicitly configured peers only', tls: false },
     connections: { configuredPeers: ['dicomweb', 'dimse'], transferJobs: true, restartRecovery: true, retry: true, cancel: true },
@@ -49,6 +52,8 @@ export async function createStoreServer(options) {
     let connections;
     try { connections = await ConnectionService.open({ archive, credentials }); } catch (error) { await archive.close(); throw error; }
     const thumbnails = new ThumbnailService();
+    const studyExports = createStudyExportService();
+    const activeReaders = new Set();
     let activeUploads = 0, closing = false;
     const capabilities = structuredClone(CAPABILITIES);
     capabilities.security.accessProfiles = ['authenticated', 'local-research'];
@@ -64,6 +69,7 @@ export async function createStoreServer(options) {
         res.setHeader('Cache-Control', 'no-store');
         res.setHeader('X-Frame-Options', 'DENY');
         res.setHeader('Content-Security-Policy', "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; worker-src 'self' blob:; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'");
+        let releaseRead;
         try {
             if (closing) throw httpError(503, 'The archive is shutting down. Retry shortly.');
             const requestUrl = new URL(req.url, 'http://localhost');
@@ -97,6 +103,26 @@ export async function createStoreServer(options) {
             }
             if (p.startsWith('/api/') || p === '/dicomweb' || p.startsWith('/dicomweb/')) {
                 if (!identity && !localDicomwebAccess) throw httpError(401, 'Sign in or use an API bearer token to access the archive.');
+            }
+            // A read lease lasts through streaming/worker completion, so an
+            // administrator cannot remove originals from an active reader.
+            if ((method === 'GET' || method === 'HEAD') && (dicomwebPath || p.startsWith('/api/v1/download/') || /\/thumbnail$/.test(p))) {
+                releaseRead = archive.acquireReadLease();
+                activeReaders.add(res);
+            }
+            const studyExport = p.match(/^\/api\/v1\/studies\/([0-9.]+)\/export$/);
+            if (studyExport && method === 'GET') {
+                await studyExports.export(req, res, archive, studyExport[1]); return;
+            }
+            const deletionPreview = p.match(/^\/api\/v1\/studies\/([0-9.]+)\/deletion-preview$/);
+            if (deletionPreview && method === 'GET') return json(res, 200, archive.previewStudyDeletion(deletionPreview[1]));
+            const removeStudy = p.match(/^\/api\/v1\/studies\/([0-9.]+)$/);
+            if (removeStudy && method === 'DELETE') {
+                const body = await readJson(req, 4096);
+                if (!body || typeof body !== 'object' || Array.isArray(body) || Object.keys(body).some(key => !['confirmation', 'revision'].includes(key))) throw httpError(400, 'Confirm the current study removal preview.');
+                if (activeUploads) throw httpError(409, 'Finish or cancel active imports before removing a study.');
+                const result = await archive.deleteStudy(removeStudy[1], body);
+                return json(res, result.reclamationPending ? 202 : 200, result);
             }
             if (p === '/api/v1/access-policy' && method === 'GET') return json(res, 200, accessPolicy.snapshot());
             if (p === '/api/v1/access-policy' && method === 'PUT') {
@@ -181,17 +207,26 @@ export async function createStoreServer(options) {
             json(res, Number.isInteger(status) && status >= 400 && status <= 599 ? status : 500,
                 { error: { code: status === 500 ? 'INTERNAL_ERROR' : `HTTP_${status}`, message: status >= 500 ? 'The archive could not complete this request. Check server status and retry.' : error.message } });
             if (status >= 500) console.error(`Request failed (${error.code || error.name || 'Error'}).`);
-        }
+        } finally { activeReaders.delete(res); releaseRead?.(); }
     });
     server.on('clientError', (_error, socket) => socket.end('HTTP/1.1 400 Bad Request\r\nConnection: close\r\n\r\n'));
-    return { server, archive, auth, capabilities, connections, accessPolicy,
+    return { server, archive, auth, capabilities, connections, accessPolicy, studyExports,
         async listen() {
             await new Promise((resolve, reject) => { server.once('error', reject); server.listen(port, host, () => { server.off('error', reject); resolve(); }); });
             return server.address();
         },
         async close() {
             closing = true;
-            if (server.listening) await new Promise(resolve => { server.close(resolve); server.closeIdleConnections(); });
+            await studyExports.close();
+            // A paused client must not hold an original read lease forever.
+            // Imports receive a short grace period, then their normal durable
+            // ingest/recovery path handles an interrupted request.
+            for (const response of activeReaders) response.destroy();
+            if (server.listening) await new Promise(resolve => {
+                const deadline = setTimeout(() => server.closeAllConnections(), 10_000);
+                deadline.unref();
+                server.close(() => { clearTimeout(deadline); resolve(); }); server.closeIdleConnections();
+            });
             await thumbnails.close();
             await connections.close();
             await archive.close();

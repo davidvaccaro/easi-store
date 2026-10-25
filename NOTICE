@@ -1,4 +1,4 @@
-EASI Store 0.1.0 preview
+EASI Store 0.3.0 preview
 Copyright (c) 2026 Xinonix Interactive Development, Inc.
 
 Independently implemented imaging archive built with EASI JS and EASI View.
@@ -11,3 +11,6 @@ Association for its standards publications relating to digital communications
 of medical information. This project is not endorsed by NEMA or Orthanc.
 
 See licenses/ and the SDK distribution notices for dependency terms.
+
+Study ZIP exports use yazl 3.3.1 and buffer-crc32 1.0.0 (MIT).
+Their license texts are retained in licenses/ and in the runtime dependencies.

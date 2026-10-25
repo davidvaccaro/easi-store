@@ -35,7 +35,7 @@ DIMSE carries datasets without a Part 10 wrapper. Store creates File Meta Inform
 
 Full nested dataset JSON is derived on demand from existing originals through EASI JS's streaming handler seam. Binary and large values remain bounded file-range descriptors/BulkDataURI references. This avoids a destructive reindex/reimport migration and avoids pixel decoding for the catalog. Metadata extraction/response concurrency, attributes, sequence depth, cache size, and frame/fragment counts are independently bounded. Native frame conversion produces little-endian pixel values; original instance retrieval remains unchanged.
 
-Thumbnail rendering is a separate, limited management feature. Two bounded workers generate small PNGs for supported native and baseline-JPEG profiles; unsupported objects keep a fallback icon. Thumbnails neither establish display support for every archived object nor imply a standard DICOMweb rendered-resource implementation. The embedded viewer retains its own profile and whole-series loading limits; independent EASI View integration can use the expanded metadata/pixel interfaces.
+Thumbnail rendering is a separate, limited management feature. Two bounded workers generate small PNGs for supported native and baseline-JPEG profiles; unsupported objects keep a fallback icon. Thumbnails neither establish display support for every archived object nor imply a standard DICOMweb rendered-resource implementation. The embedded viewer uses the independently published SDK's archive interface: metadata first, then individual originals on demand. It no longer materializes every encoded instance in a series before opening. Per-object, metadata, decoded-cache, and stack limits remain enforced by the SDK; this is not unlimited memory or universal image support.
 
 Configured peers and `transfer_jobs`/`transfer_items` live in the archive SQLite catalog. One instance transfers at a time, with its UID-only selection snapshotted and an acknowledgment checkpoint committed before continuing. A destination revision guards retries after configuration changes. A crash between remote acceptance and local checkpoint can cause duplicate delivery; this is not a distributed exactly-once transaction. Restart resumes unfinished work, while explicit cancellation intent is retained. Server credentials are resolved by a private configured name and never serialized into browser connection records.
 
@@ -53,7 +53,10 @@ Configured peers and `transfer_jobs`/`transfer_items` live in the archive SQLite
 | `/api/v1/studies/{study}/series/{series}/instances` | Instance summaries |
 | `/api/v1/instances` | Raw `application/dicom` management import |
 | `/api/v1/demo` | Generated synthetic demo import |
-| `/api/v1/activity` | Persisted import outcomes |
+| `/api/v1/activity` | Persisted import/removal outcomes |
+| `/api/v1/studies/{study}/export` | Streamed original ZIP with SHA-256 manifest |
+| `/api/v1/studies/{study}/deletion-preview` | Current count/byte/revision preview |
+| `DELETE /api/v1/studies/{study}` | Confirmed archival-copy removal and storage reclamation |
 | `/api/v1/connections` | Explicit remote peer configuration, diagnostics, and study search |
 | `/api/v1/jobs` | Durable transfer jobs and progress/cancel/retry |
 | `/api/v1/studies/{study}/series/{series}/thumbnail` | Authenticated management PNG preview |
@@ -61,7 +64,17 @@ Configured peers and `transfer_jobs`/`transfer_items` live in the archive SQLite
 | `/api/v1/download/{study}/{series}/{instance}` | Original DICOM download |
 | `/dicomweb` | Indexed query, original storage/retrieval, nested JSON metadata, supported frames/bulk; see DICOMweb guide |
 
-All archive resources require authorization; the minimal health/session endpoints expose no catalog or patient information. The browser uses same-origin sessions. The management API does not imply compatibility with Orthanc's REST API.
+Management archive resources always require authorization. DICOMweb follows the explicit authenticated or loopback-only local-research profile; minimal health/session endpoints expose no catalog or patient information. The browser uses same-origin sessions. The management API does not imply compatibility with Orthanc's REST API.
+
+## Export and removal durability
+
+Export snapshots minimal immutable original records under a read lease. A bounded ZIP writer lazily opens one original per export, honors HTTP backpressure, and verifies original bytes against catalog SHA-256 and size while streaming. The manifest follows verified originals; integrity failure aborts the download. No study-sized browser Blob or server memory buffer is needed. ZIP/ZIP64 generation uses MIT-licensed yazl and buffer-crc32.
+
+Removal reserves an archive mutation gate before yielding. Active import/read leases and target queued/running/canceling transfers block it; new imports/readers/job creation cannot enter the deletion boundary. HTTP WADO/bulk/frame/thumbnail/original downloads, exports, outgoing jobs, and native DIMSE retrieval hold leases through their file reads. This initial gate is archive-wide and conservative.
+
+A synchronized intent journal records the preview snapshot. Schema 2 adds a committed deletion marker: SQLite removes catalog rows and writes that marker plus activity counts in the same transaction. Original objects are then reclaimed only after confirming no remaining catalog references and verifying bytes/hash. Startup distinguishes uncommitted intent (keep the study) from committed deletion (finish reclamation), refusing corrupt or conflicting journals rather than resurrecting data. Reclamation failure after commit returns `202` with `reclamationPending:true` and blocks further archive data work pending restart/recovery.
+
+Schema 1→2 migration preserves original objects and activity rows. Older runtimes refuse schema 2. Take a verified offline backup with the prior runtime before upgrading; rollback restores it into a separate directory. See [STUDY_MANAGEMENT.md](STUDY_MANAGEMENT.md).
 
 ## Storage evolution
 

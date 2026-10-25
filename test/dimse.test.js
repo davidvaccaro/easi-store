@@ -32,7 +32,7 @@ test('EASI JS SCU interoperates with durable ECHO/STORE SCP and persisted data s
 
 test('DIMSE has no successful C-STORE before first-run setup or on persistence failure', { timeout: 20000 }, async t => {
     let called = false;
-    const scp = new StorageScp({ archive: { ingest: async () => { called = true; throw new Error('disk unavailable'); } }, auth: { record: null }, port: 0 });
+    const scp = new StorageScp({ archive: { acquireImportReservation: () => () => {}, ingest: async () => { called = true; throw new Error('disk unavailable'); } }, auth: { record: null }, port: 0 });
     const address = await scp.listen(); t.after(() => scp.close());
     const association = { host: '127.0.0.1', port: address.port, callingAeTitle: 'EASITEST', calledAeTitle: 'EASISTORE', timeoutMs: 5000 };
     const transport = new NodeDimseCStoreScuTransport();

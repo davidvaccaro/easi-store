@@ -151,6 +151,7 @@ export class ConnectionService {
       if (!records.length) throw httpError(404,'The selected study, series, or instance is not archived.');
       if (records.length>100000) throw httpError(413,'A transfer is limited to 100,000 instances. Select individual series.');
     }
+    this.archive.assertAvailableForMutation();
     return this.jobs.create({peer,direction:input.direction,selection,records});
   }
   async enumerate(peer,selection,signal) {
@@ -201,7 +202,9 @@ export class ConnectionService {
     return records;
   }
   async transfer(peer,direction,item,signal) {
-    if (this.transports.transfer) return this.transports.transfer(peer,direction,item,signal);
+    const releaseRead = direction === 'send' ? this.archive.acquireReadLease() : null;
+    try {
+    if (this.transports.transfer) return await this.transports.transfer(peer,direction,item,signal);
     if (direction==='send') {
       const record=this.archive.getInstance(item.studyUid,item.seriesUid,item.sopUid); if (!record) throw httpError(404,'An archived transfer object is no longer available.');
       if (peer.type==='dimse') {
@@ -243,6 +246,7 @@ export class ConnectionService {
       if(reader)await reader.close().catch(()=>{});
       else if(response.body&&!response.body.locked)await response.body.cancel().catch(()=>{});
     }
+    } finally { releaseRead?.(); }
   }
   async close() { await this.jobs.close(); }
 }

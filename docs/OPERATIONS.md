@@ -127,3 +127,13 @@ Never install application files inside an archive directory or replace a data di
 The preview is a single-host development/research foundation. Publishing its HTTP port to a LAN or the internet is a distinct deployment task. Use authenticated mode for a network HTTP listener and protect credentials in transit with an appropriately configured HTTPS reverse proxy. DIMSE needs an explicit network bind and exact calling-AE/source-IP peers, with firewall and transport protection chosen for the environment. Those controls do not provide native DICOM TLS. Reverse-proxy trust qualification, backup/restore drills, retention, OIDC/RBAC/scoped service credentials, storage capacity/quotas, audit policy, and concurrent workload qualification have explicit backlog items. An administrator account and a healthcheck alone do not establish production readiness.
 
 No analytics or external model service is built into this product. The separately embedded viewer uses the same-origin server connection to retrieve the images selected by the user. Importing transfers data to the configured Store server; it is not local-only file viewing.
+
+## Study export and space reclamation (0.3.0)
+
+Open a study and choose **Export originals** for an original-file ZIP with a SHA-256 manifest. This copies the selected snapshot to the browser's download location; it does not anonymize it or replace a full archive backup. Use a ZIP64-capable extractor for large exports.
+
+Choose **Remove study**, review counts/bytes, and type **DELETE** to remove Store's archival copies and reclaim their unreferenced object bytes. This cannot be undone in the app. Stop imports and target transfer jobs, and allow active readers/downloads to finish before retrying a busy removal. Deleting the archive copies leaves source files, exports, backups, and remote servers unchanged.
+
+A committed removal with incomplete reclamation is reported explicitly. Restart Store to run recovery; do not manually delete its journal or restore individual object/catalog files. If recovery reports integrity/journal conflicts, retain the whole directory for repair. The v1 removal gate is conservative across archive readers; live-client traffic may require a quiet maintenance window.
+
+0.3.0 introduces catalog schema 2. Before its first start on an existing archive, stop Store and use the old build's offline `backup` command. Original bytes are not rewritten by migration. Keep that backup and old runtime. An older build refuses schema 2; rollback restores the pre-upgrade backup to a new directory. Current restore accepts verified 0.1.0, 0.2.0, 0.2.1, and 0.3.0 backup manifests. An original-study ZIP does not include catalog/security/peer/job state and cannot serve as this rollback backup.

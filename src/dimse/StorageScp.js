@@ -38,6 +38,7 @@ export class StorageScp {
     }).finally(async () => {
       context.closed = true; context.operation?.abort.abort();
       context.store?.destroy(new Error('DIMSE association closed.'));
+      context.active?.releaseImport?.();
       for (const pending of context.pendingStores.values()) pending.reject(new Error('DIMSE association closed.'));
       context.pendingStores.clear();
       if (!socket.destroyed) socket.destroy();
@@ -155,14 +156,21 @@ export class StorageScp {
     if (context.active || context.operation) throw new Error('Asynchronous operations are not negotiated.');
     if (!command.messageId || command.sopClassUid !== pc.abstract || !pc.requestorScu || command.field !== 0x30 && ![0,1,2].includes(command.priority)) throw new Error('Invalid DIMSE command or role.');
     if (command.field === 0x30 && pc.abstract === VERIFICATION && command.datasetType === 0x101) await this.respond(socket,context,id,command,0);
-    else if (command.field === 1 && pc.abstract.startsWith('1.2.840.10008.5.1.4.1.1.') && command.datasetType !== 0x101 && uidValid(command.sopUid)) context.active = {kind:'store',command,id,pc,discarded:false};
+    else if (command.field === 1 && pc.abstract.startsWith('1.2.840.10008.5.1.4.1.1.') && command.datasetType !== 0x101 && uidValid(command.sopUid)) {
+      let releaseImport, reservationError;
+      try { releaseImport = this.archive.acquireImportReservation(); }
+      catch (error) { reservationError = error; }
+      // Reserve accepted C-STORE before its first dataset PDV. A sender may
+      // pause here; that pending import must still exclude study removal.
+      context.active = {kind:'store',command,id,pc,discarded:false,releaseImport,reservationError};
+    }
     else if (pc.query && command.field === pc.query.operation && command.datasetType !== 0x101) context.active = {kind:'query',command,id,pc,chunks:[],bytes:0};
     else { await this.respond(socket,context,id,command,0x122); if (command.datasetType !== 0x101) throw new Error('Unsupported service.'); }
   }
   async storeData(socket,context,active,bytes,last) {
     if (!context.store) {
       const stream = new PassThrough({highWaterMark:65536}); stream.on('error',() => {}); context.store = stream;
-      if (!this.archiveReady()) { active.discarded = true; active.outcome = Promise.resolve({error:{statusCode:403}}); }
+      if (active.reservationError || !this.archiveReady()) { active.discarded = true; active.outcome = Promise.resolve({error:active.reservationError ?? {statusCode:403}}); }
       else {
         active.outcome = this.archive.ingest(stream,{source:`dimse:${this.aeTitle}`,expectedSopUid:active.command.sopUid,expectedSopClassUid:active.command.sopClassUid})
           .then(result => ({result}),error => { active.discarded = true; stream.destroy(); return {error}; });
@@ -171,15 +179,19 @@ export class StorageScp {
     }
     if (!active.discarded && !context.store.write(bytes)) await Promise.race([once(context.store,'drain'),active.outcome]);
     if (last) {
-      context.store.end(); const outcome = await active.outcome;
-      await this.respond(socket,context,active.id,active.command,outcome.error ? outcome.error.statusCode === 409 ? 0x111 : 0xa700 : 0);
-      context.store.destroy(); context.store = null; context.active = null;
+      try {
+        context.store.end(); const outcome = await active.outcome;
+        await this.respond(socket,context,active.id,active.command,outcome.error ? outcome.error.statusCode === 409 && outcome.error.code === 'uid-conflict' ? 0x111 : 0xa700 : 0);
+      } finally {
+        context.store.destroy(); context.store = null; active.releaseImport?.(); context.active = null;
+      }
     }
   }
   async query(socket,context,operation,bytes) {
-    const {command,id,pc} = operation; let counts;
+    const {command,id,pc} = operation; let counts, releaseRead;
     try {
       if (!this.archiveReady()) throw Object.assign(new Error('Archive setup is required.'),{dimseStatus:command.field === 0x20 ? 0xa700 : 0xa701});
+      releaseRead = this.archive.acquireReadLease();
       const identifier = parseIdentifier(bytes,pc.transferSyntax), plan = queryPlan(identifier,pc.query.model,command.field !== 0x20);
       if (command.field === 0x20) {
         const groups = matchingGroups(this.archive,plan,this.maxQueryResults);
@@ -223,7 +235,7 @@ export class StorageScp {
       await this.respond(socket,context,id,command,status,{counts,identifier:result});
     } catch (error) {
       if (!context.closed) await this.respond(socket,context,id,command,error.dimseStatus ?? (command.field === 0x20 ? 0xa700 : counts ? 0xa702 : 0xa701),{counts});
-    }
+    } finally { releaseRead?.(); }
   }
   async getSubOperation(socket,context,record,priority) {
     const chosen = [...context.contexts].find(([,pc]) => pc.accepted && pc.requestorScp && pc.abstract === record.sopClassUid && pc.transferSyntax === record.transferSyntaxUid);

@@ -27,7 +27,7 @@ test('DIMSE defaults to loopback trust and requires an explicit association poli
 
 test('DIMSE configured AE/IP trust applies before C-ECHO or durable C-STORE on a network listener', { timeout: 20000 }, async t => {
     let ingested = 0;
-    const archive = { async ingest(stream) { for await (const bytes of stream) void bytes; ingested++; return {}; } };
+    const archive = { acquireImportReservation: () => () => {}, async ingest(stream) { for await (const bytes of stream) void bytes; ingested++; return {}; } };
     const accessPolicy = new AccessPolicy({ dataDir: '/not-opened', host: '0.0.0.0' });
     accessPolicy.record.dimse = { allowLoopback: false, peers: [{ callingAeTitle: 'ALLOWED_VIEW', address: '127.0.0.1' }] };
     const scp = new StorageScp({ archive, auth: { record: {} }, host: '0.0.0.0', port: 0,

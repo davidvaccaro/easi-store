@@ -5,7 +5,8 @@ import { mkdir, open, readFile, readdir, rename, rm, stat, chmod } from 'node:fs
 import { hostname } from 'node:os';
 import { join, resolve, dirname } from 'node:path';
 import { extractMetadata } from './metadata.js';
-import { ArchiveError } from './errors.js';
+import { ArchiveError, validUid } from './errors.js';
+import { StudyDeletion } from './StudyDeletion.js';
 
 export { ArchiveError } from './errors.js';
 
@@ -62,6 +63,9 @@ export class Archive {
     this.closing = false;
     this.lockToken = randomUUID();
     this.operations = new Set();
+    this.importReservations = new Set();
+    this.readLeases = new Set();
+    this.deletion = new StudyDeletion(this);
   }
 
   async initialize() {
@@ -97,8 +101,11 @@ export class Archive {
       this.db = new DatabaseSync(join(this.dataDir, 'catalog.sqlite'));
       await chmod(join(this.dataDir, 'catalog.sqlite'), 0o600);
       const schemaVersion = this.db.prepare('PRAGMA user_version').get().user_version;
-      if (schemaVersion > 1) throw new Error('This archive was created by a newer EASI Store version; use that version to open it.');
-      this.db.exec(`PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL; PRAGMA foreign_keys=ON; PRAGMA busy_timeout=5000;
+      if (schemaVersion > 2) throw new Error('This archive was created by a newer EASI Store version; use that version to open it.');
+      this.db.exec('PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL; PRAGMA foreign_keys=ON; PRAGMA busy_timeout=5000;');
+      this.db.exec('BEGIN IMMEDIATE');
+      try {
+        this.db.exec(`
         CREATE TABLE IF NOT EXISTS instances (
           id TEXT NOT NULL UNIQUE, studyUid TEXT NOT NULL, seriesUid TEXT NOT NULL, sopUid TEXT PRIMARY KEY,
           sopClassUid TEXT NOT NULL, transferSyntaxUid TEXT NOT NULL, modality TEXT NOT NULL,
@@ -111,16 +118,24 @@ export class Archive {
         CREATE INDEX IF NOT EXISTS instances_study ON instances(studyUid);
         CREATE INDEX IF NOT EXISTS instances_series ON instances(seriesUid);
         CREATE INDEX IF NOT EXISTS instances_patient ON instances(patientKey);
+        CREATE INDEX IF NOT EXISTS instances_object ON instances(objectKey);
         CREATE TABLE IF NOT EXISTS activity (
           id TEXT PRIMARY KEY, timestamp TEXT NOT NULL, outcome TEXT NOT NULL, source TEXT NOT NULL,
           instanceId TEXT, bytes INTEGER NOT NULL DEFAULT 0
-        ); PRAGMA user_version=1;`);
+        );
+        CREATE TABLE IF NOT EXISTS study_deletions (
+          id TEXT PRIMARY KEY, studyUid TEXT NOT NULL, revision TEXT NOT NULL,
+          instanceCount INTEGER NOT NULL, bytes INTEGER NOT NULL, createdAt TEXT NOT NULL
+        );`);
+        if (!this.db.prepare('PRAGMA table_info(activity)').all().some(column => column.name === 'details')) this.db.exec('ALTER TABLE activity ADD COLUMN details TEXT');
+        this.db.exec('PRAGMA user_version=2; COMMIT');
+      } catch (error) { this.db.exec('ROLLBACK'); throw error; }
       await this.recover();
     } catch (error) { await this.close(); throw error; }
   }
 
-  addActivity(outcome, record) {
-    this.db.prepare('INSERT INTO activity VALUES (?,?,?,?,?,?)').run(randomUUID(), new Date().toISOString(), outcome, record.source, record.id, record.bytes);
+  addActivity(outcome, record, details) {
+    this.db.prepare('INSERT INTO activity (id,timestamp,outcome,source,instanceId,bytes,details) VALUES (?,?,?,?,?,?,?)').run(randomUUID(), new Date().toISOString(), outcome, record.source, record.id, record.bytes, details ? JSON.stringify(details) : null);
   }
 
   commitRecord(record, outcome = 'stored') {
@@ -134,6 +149,9 @@ export class Archive {
 
   async recover() {
     const journalDir = join(this.dataDir, 'journal');
+    // Resolve committed removals before the older ingest recovery path. A
+    // deletion journal must never be mistaken for a pending original import.
+    await this.deletion.recover();
     for (const name of await readdir(journalDir)) {
       if (!/^[a-f0-9-]+\.json$/.test(name)) {
         if (name.endsWith('.tmp')) await rm(join(journalDir, name));
@@ -168,8 +186,7 @@ export class Archive {
   }
 
   async ingest(readable, options = {}) {
-    if (this.closing) throw new ArchiveError('The archive is shutting down.', 503, 'closing');
-    if (this.recoveryRequired) throw new ArchiveError('An interrupted durable write requires an archive restart before importing more instances.', 503, 'recovery-required');
+    this.assertAvailableForMutation();
     const operation = this.performIngest(readable, options);
     this.operations.add(operation);
     try { return await operation; } finally { this.operations.delete(operation); }
@@ -252,6 +269,45 @@ export class Archive {
     return result;
   }
 
+  assertAvailableForMutation() {
+    if (this.closing || this.closed) throw new ArchiveError('The archive is shutting down.', 503, 'closing');
+    if (this.recoveryRequired) throw new ArchiveError('An interrupted durable operation requires an archive restart before using archive data.', 503, 'recovery-required');
+    if (this.deleting) throw new ArchiveError('A study removal is in progress. Wait for it to finish and try again.', 409, 'archive-deletion-active');
+  }
+
+  acquireReadLease() {
+    this.assertAvailableForMutation();
+    const token = {};
+    this.readLeases.add(token);
+    return () => {
+      if (!this.readLeases.delete(token)) return;
+      if (!this.readLeases.size) { this.readsDrained?.(); this.readsDrained = null; }
+    };
+  }
+
+  acquireImportReservation() {
+    this.assertAvailableForMutation();
+    const token = {};
+    this.importReservations.add(token);
+    return () => {
+      if (!this.importReservations.delete(token)) return;
+      if (!this.importReservations.size) { this.importsDrained?.(); this.importsDrained = null; }
+    };
+  }
+
+  previewStudyDeletion(studyUid) { return this.deletion.preview(studyUid); }
+  deleteStudy(studyUid, options) { return this.deletion.remove(studyUid, options); }
+
+  snapshotStudyOriginals(studyUid, { maxInstances = 100000 } = {}) {
+    this.assertAvailableForMutation();
+    if (!validUid(studyUid)) throw new ArchiveError('A valid study UID is required.', 400, 'invalid-study');
+    if (!Number.isInteger(maxInstances) || maxInstances < 1 || maxInstances > 100000) throw new ArchiveError('The original snapshot limit must be between 1 and 100,000 instances.');
+    const rows = this.db.prepare('SELECT studyUid,seriesUid,sopUid,sopClassUid,transferSyntaxUid,bytes,sha256,objectKey FROM instances WHERE studyUid=? ORDER BY seriesUid,sopUid LIMIT ?').all(studyUid, maxInstances + 1);
+    if (!rows.length) throw new ArchiveError('The study was not found.', 404, 'study-not-found');
+    if (rows.length > maxInstances) throw new ArchiveError('This study exceeds the configured original snapshot limit.', 413, 'study-too-large');
+    return rows.map(row => ({ ...row, path: join(this.dataDir, 'objects', row.objectKey) }));
+  }
+
   listStudies({ search = '', limit = 100, offset = 0 } = {}) {
     limit = Math.max(1, Math.min(1000, Math.trunc(number(limit, 100))));
     offset = Math.max(0, Math.trunc(number(offset)));
@@ -315,6 +371,8 @@ export class Archive {
     this.closing = true;
     await Promise.allSettled([...this.operations]);
     await this.queue;
+    if (this.importReservations.size) await new Promise(resolve => { this.importsDrained = resolve; });
+    if (this.readLeases.size) await new Promise(resolve => { this.readsDrained = resolve; });
     if (this.db) { try { this.db.exec('PRAGMA wal_checkpoint(TRUNCATE)'); } finally { this.db.close(); this.db = null; } }
     if (this.lockPath) {
       try {

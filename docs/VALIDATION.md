@@ -132,3 +132,55 @@ session as expected. The disposable container and volume were removed.
 Verified native packages and a checksum receipt were retained locally under the
 ignored `artifacts/native-ci/access-dd9bc8f/` directory; the receipt pins the source
 commit, workflow and exact artifact digests. No private archive content is included.
+
+## V1 workflow milestone — 0.3.0 (2026-10-25)
+
+The integrated candidate passes **137 synthetic tests**, TypeScript checks,
+source-asset guards, the production UI build and all 61 distribution-file hashes.
+New tests include independent ZIP/ZIP64 directory/CRC/SHA-256 verification,
+backpressure, bounded export admission, cancellation/corruption/missing originals,
+removal preview/confirmation/revision checks, physical reclamation and shared
+reference protection, schema-1 migration, interrupted pre/postcommit recovery,
+conflicting journals, pending HTTP/DIMSE imports and active transfer/read guards.
+Paused original/WADO readers cannot stall shutdown indefinitely. Native socket
+tests also pause an accepted C-STORE before its first dataset fragment: its
+reservation blocks removal and is released on completion/error/disconnection;
+a command rejected during removal cannot retry admission after the gate clears.
+
+Disposable Chrome exercises a generated **260-instance, 130.3 MiB** CT series.
+Opening requested one original; seeking to image 260 requested one more, and
+both displayed. Exact-instance opening at 5 and Next to 6 retained correct SOP
+identities. Native browser ZIP download completed and an independent Python
+`zipfile`/SHA-256 pass verified all 260 originals. Canceling removal preserved the
+study; adding an instance after preview produced the intended 409 and required a
+new preview plus typed confirmation. Confirmed removal refreshed the library and
+retained an unselected generated study. The 390 px removal dialog fit the screen.
+No runtime exceptions or external requests occurred. Thumbnail worker saturation
+retains the documented fallback icons; the deliberate stale-preview request
+returns 409. All browser removals used a disposable synthetic archive.
+
+Before upgrading the real local archive, the prior 0.2.1 build wrote a protected
+offline backup, independently verified against all 2,998 manifest entries. It
+retains the old schema, originals, security/configuration and rollback state.
+The backup and imaging data remain outside source/artifacts. After upgrade, all 2,992 original SHA-256 hashes matched that backup; the one-patient, two-study, 20-series catalog and byte total were unchanged. Schema 2 opened successfully, the research profile persisted, and management remained protected. Historical 0.2.1 evidence does not qualify a changed build.
+
+The final Linux ARM64 Docker image (Node 24.22.1) passed generated-data runtime
+checks under nonroot UID 10001, read-only root and a private volume. Existing
+metadata/frame/thumbnail/peer-transfer checks passed, followed by independent
+original ZIP/CRC/SHA-256 verification, rejected lowercase/stale confirmations,
+physical reclamation, deletion activity identity/counts, and restart without
+resurrecting the removed study. The unselected original remained byte identical.
+Image ID: `sha256:27ed9a4973dbdd06aa41f66325ce6f4624f286770a62f642855323856bd6e500`.
+The disposable container and volume were removed.
+
+The macOS ARM64 0.3.0 portable bundle passed verification of 5,343 inventory
+files and the expanded smoke under bundled Node 24.22.1 with no system Node on
+PATH. It exercised metadata/frame/bulk/thumbnail/protected-route/peer-transfer
+and access-profile persistence, then exported the independent original, verified
+ZIP/CRC/SHA-256, rejected invalid confirmation, removed only that study, checked
+physical disk reclamation and restarted with all 12 unselected demo instances
+intact. Packaged source and built assets match the final local candidate.
+Artifact SHA-256: `76e0153cf617443341426a556cbab808e8e0d59b75e464eb1facf738c9ce5633`.
+The package and synthetic-only receipts are retained under ignored
+`artifacts/workflows-030/`. Cross-platform CI qualifies the exact pushed source
+separately; this local result is macOS ARM64 only.
