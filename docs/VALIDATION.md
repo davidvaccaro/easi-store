@@ -184,3 +184,13 @@ Artifact SHA-256: `76e0153cf617443341426a556cbab808e8e0d59b75e464eb1facf738c9ce5
 The package and synthetic-only receipts are retained under ignored
 `artifacts/workflows-030/`. Cross-platform CI qualifies the exact pushed source
 separately; this local result is macOS ARM64 only.
+
+The [0.3.0 native portable matrix](https://github.com/davidvaccaro/easi-store/actions/runs/40196077113)
+passed on macOS ARM64, Windows x64 and Linux x64 for source
+`20a749426f8494aaabdf4ea4d27ca5fb458b3266`. Each runner passed all 137 tests,
+TypeScript/build/distribution checks, packaging with bundled Node 24.22.1 and
+the expanded launcher smoke, including original ZIP/manifest verification,
+typed removal, physical reclamation, unselected-study retention and restart.
+The [Linux checks and Docker build](https://github.com/davidvaccaro/easi-store/actions/runs/40196053721)
+also passed for the same source. These are preview qualifications for the named
+profiles/platforms, not signed installers or a stable-v1 release declaration.

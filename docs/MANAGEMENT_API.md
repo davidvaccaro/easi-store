@@ -35,7 +35,7 @@ The **local-research** profile changes local DICOMweb client requirements, not m
 | GET | `/studies/{studyUid}/series/{seriesUid}/instances/{sopUid}/thumbnail` | Bounded instance PNG |
 | POST | `/instances` | Raw `application/dicom` original bytes; `201` stored, `200` byte-identical duplicate |
 | GET | `/download/{studyUid}/{seriesUid}/{sopUid}` | Original `application/dicom` attachment |
-| GET | `/activity` | `{items}` of persisted import/removal outcomes; removal `details` contains counts |
+| GET | `/activity` | `{items}` of persisted import/removal outcomes; removal `details` contains study UID and counts |
 | GET | `/studies/{studyUid}/export` | Streamed ZIP/ZIP64 originals and SHA-256 manifest |
 | GET | `/studies/{studyUid}/deletion-preview` | `{studyUid,revision,seriesCount,instanceCount,bytes,reclaimableBytes}` |
 | DELETE | `/studies/{studyUid}` | `{confirmation:"DELETE",revision}`; `200` removed/reclaimed, `202` committed with recovery pending |
