@@ -258,3 +258,24 @@ After startup, archive totals remained one patient, two studies, 20 series and
 Local research persisted, and unauthenticated management requests remained 401.
 No existing Orthanc configuration or imaging data was used or changed by these
 qualification checks.
+
+The macOS ARM64 local portable bundle passed all **5,346 inventory files**
+and the actual launcher smoke with bundled Node 24.22.1 and no system Node on
+PATH. Original ZIP/CRC/SHA-256, typed removal, physical reclamation, protected
+administration, access persistence and restart passed. Artifact SHA-256:
+`838ba038cd004d7806064b32766414a92404efc230d071b79d45a2774e86b7b1`.
+Synthetic-only receipts are retained under ignored `artifacts/cmove-040/`.
+
+The [0.4.0 native matrix](https://github.com/davidvaccaro/easi-store/actions/runs/40369005639)
+passed on macOS ARM64, Linux x64 and Windows x64 for source
+`f5d564a18a9c1b36318f9c45235d4a1c4774b987`: all 188 tests on each platform,
+TypeScript/build/distribution checks, runtime-bundled packaging and the full
+portable launcher smoke. The [Check/Docker workflow](https://github.com/davidvaccaro/easi-store/actions/runs/40368920426)
+also passed for that source. All three downloaded candidates were independently
+verified against GitHub artifact digests, inner SHA-256 sidecars, complete file
+inventories and 57 tracked release inputs; Windows source comparison normalizes
+line endings. Verified packages/receipts are retained under ignored
+`artifacts/native-ci/cmove-f5d564a/`. These qualify the named preview profiles;
+platform signing, stable-v1 publication and production qualification remain
+separate gates. Later documentation-only evidence commits do not change this
+qualified runtime source.

@@ -109,3 +109,15 @@ queued STOW/WADO transfers and checkpoints across three launches. The bundles
 include verified official Node 24.22.1. These are preview portable archives;
 platform signing, notarization and native installer qualification remain future
 work. See [VALIDATION.md](VALIDATION.md) for the exact source and evidence.
+
+## 0.4.0 qualification
+
+The [0.4.0 native matrix](https://github.com/davidvaccaro/easi-store/actions/runs/40369005639)
+passed for source `f5d564a18a9c1b36318f9c45235d4a1c4774b987` on macOS ARM64,
+Linux x64 and Windows x64. Each platform passed all 188 tests, packaged bundled
+Node 24.22.1 and ran the real portable launcher smoke. The
+[Check/Docker workflow](https://github.com/davidvaccaro/easi-store/actions/runs/40368920426)
+also passed. Local macOS ARM64 packaging and Linux ARM64 container qualification
+are recorded in [VALIDATION.md](VALIDATION.md), together with independent Orthanc
+C-MOVE evidence. These are unsigned preview candidates, not a public release or
+a claim of universal PACS/deployment compatibility.
