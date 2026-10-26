@@ -1,6 +1,30 @@
 import { randomUUID } from 'node:crypto';
 import { httpError } from '../http/utils.js';
 
+// Only locally authored diagnostics are persisted. Peer error text may contain
+// identifying metadata, URLs, credentials or arbitrary terminal/markup content.
+const diagnostics = Object.freeze({
+  'connection-changed': 'The connection changed. Create a new transfer to confirm the destination.',
+  'remote-selection-empty': 'The selected remote study contains no matching instances.',
+  'move-receiver-unavailable': 'C-MOVE requires this Store’s active DIMSE receiver. Enable the receiver or choose C-GET for this connection.',
+  'move-callback-not-trusted': 'The configured source is not trusted to send C-MOVE callbacks. Review the receiver’s calling-AE/source-IP policy; trust is not changed automatically.',
+  'move-profile-invalid': 'C-MOVE requires an enumerated instance with study, series, SOP instance and SOP class UIDs.',
+  'move-capacity': 'The C-MOVE receiver has reached its active-operation limit. Wait for active retrievals to finish and retry.',
+  'move-timeout': 'C-MOVE timed out before a verified final outcome. Check the remote archive and callback connectivity, then retry unfinished instances.',
+  'move-no-callback': 'No matching C-STORE callback reached this Store. Check the remote destination mapping, receiver address and port, firewall, and allowed callers.',
+  'move-destination-unknown': 'The remote archive does not recognize this Store’s receive AE. Configure that destination on the remote archive, then retry.',
+  'move-protocol-error': 'The peer returned an invalid or inconsistent C-MOVE response. Check its Query/Retrieve profile.',
+  'move-peer-failure': 'The peer did not complete C-MOVE retrieval successfully. Check the remote archive and retry unfinished instances.',
+  'move-peer-unavailable': 'The configured DIMSE peer could not be reached for C-MOVE. Check its address, port, called AE and allowed callers.',
+  'move-receive-failure': 'The C-MOVE callback was not durably accepted. Check archive status, original-byte conflicts, and storage capacity before retrying.',
+  'move-object-missing': 'C-MOVE completed without the expected instance in this archive. Check callback delivery and the remote selection before retrying.',
+  'move-receiver-closed': 'The local DIMSE receiver stopped before C-MOVE completed. Start the receiver and retry unfinished instances.',
+  'move-state-failure': 'The C-MOVE operation state could not be durably recorded. Check archive storage before retrying.'
+});
+export function transferDiagnostic(error) {
+  return typeof error?.code === 'string' && Object.hasOwn(diagnostics, error.code) ? { code: error.code, message: diagnostics[error.code] } : null;
+}
+
 /** One instance in flight; remote delivery is at least once across power loss. */
 export class TransferQueue {
   constructor({db,service,autoStart=true}) {this.db=db;this.service=service;this.autoStart=autoStart;this.closing=false;this.current=null;this.running=null;}
@@ -42,6 +66,7 @@ export class TransferQueue {
     this.service.archive?.assertAvailableForMutation?.();
     const job=this.get(id);if(!['failed','canceled'].includes(job.state))throw httpError(409,'Only failed or canceled transfers can be retried.');
     const peer=this.service.get(job.connectionId);if(peer.revision!==job.connectionRevision)throw httpError(409,'The connection changed since this transfer was created. Create a new transfer to confirm the new destination.');
+    this.service.preflightTransfer?.(peer,job.direction);
     this.db.prepare("UPDATE transfer_items SET state='pending',outcome='' WHERE jobId=? AND state!='done'").run(id);
     this.db.prepare('UPDATE transfer_jobs SET failed=0 WHERE id=?').run(id);
     this.update(id,'queued','Retrying unfinished instances; acknowledged instances are retained.');this.start();return this.get(id);
@@ -56,18 +81,19 @@ export class TransferQueue {
       const controller=new AbortController();this.current={id:next.id,controller};
       this.update(next.id,'running','Transferring one original instance at a time.');
       try {await this.process(this.get(next.id),controller.signal);}
-      catch(error) {const state=this.get(next.id).state;if(state==='canceling')this.update(next.id,'canceled','Canceled by the administrator. A remote acknowledgement interrupted in flight may require a duplicate-safe retry.');else if(state!=='canceled')this.update(next.id,this.closing?'queued':'failed',this.closing?'Paused for shutdown; resumes on restart.':error.statusCode&&error.statusCode<500?error.message:'The peer transfer could not complete. Check its connection and retry unfinished instances.');}
+      catch(error) {const state=this.get(next.id).state;if(state==='canceling')this.update(next.id,'canceled','Canceled by the administrator. A remote acknowledgement interrupted in flight may require a duplicate-safe retry.');else if(state!=='canceled')this.update(next.id,this.closing?'queued':'failed',this.closing?'Paused for shutdown; resumes on restart.':transferDiagnostic(error)?.message ?? 'The peer transfer could not complete. Check its connection and retry unfinished instances.');}
       finally {this.current=null;}
     }
   }
   async process(job,signal) {
-    const peer=this.service.get(job.connectionId);if(peer.revision!==job.connectionRevision)throw httpError(409,'The connection changed; create a new transfer to confirm its destination.');
+    const peer=this.service.get(job.connectionId);if(peer.revision!==job.connectionRevision)throw Object.assign(httpError(409,'The connection changed; create a new transfer to confirm its destination.'),{code:'connection-changed'});
+    this.service.preflightTransfer?.(peer,job.direction);
     if(!job.total&&job.direction==='retrieve') {
       const records=await this.service.enumerate(peer,job.selection,signal);signal.throwIfAborted();
-      if(!records.length)throw httpError(404,'The selected remote study contains no matching instances.');
+      if(!records.length)throw Object.assign(httpError(404,'The selected remote study contains no matching instances.'),{code:'remote-selection-empty'});
       this.db.exec('BEGIN IMMEDIATE');try{this.replaceItems(job.id,records);this.db.exec('COMMIT');}catch(error){this.db.exec('ROLLBACK');throw error;}
     }
-    let hadFailure=false,consecutiveFailures=0;
+    let hadFailure=false,consecutiveFailures=0,lastDiagnostic=null;
     for(;;) {
       signal.throwIfAborted();if(this.closing)throw new Error('closing');
       const row=this.db.prepare("SELECT position,identity FROM transfer_items WHERE jobId=? AND state='pending' ORDER BY position LIMIT 1").get(job.id);if(!row)break;
@@ -75,8 +101,10 @@ export class TransferQueue {
       let result;
       try {result=await this.service.transfer(peer,job.direction,JSON.parse(row.identity),signal);}
       catch(error) {
-        this.db.prepare("UPDATE transfer_items SET state=?,outcome=? WHERE jobId=? AND position=?").run(signal.aborted?'pending':'failed',signal.aborted?'':'failed',job.id,row.position);
+        const diagnostic=transferDiagnostic(error);
+        this.db.prepare("UPDATE transfer_items SET state=?,outcome=? WHERE jobId=? AND position=?").run(signal.aborted?'pending':'failed',signal.aborted?'':diagnostic?.code ?? 'failed',job.id,row.position);
         if(signal.aborted)throw error;
+        if(diagnostic)lastDiagnostic=diagnostic;
         hadFailure=true;this.db.prepare('UPDATE transfer_jobs SET failed=failed+1,updatedAt=? WHERE id=?').run(new Date().toISOString(),job.id);
         if(++consecutiveFailures>=3)break;
         continue;
@@ -89,7 +117,7 @@ export class TransferQueue {
       }catch(error){this.db.exec('ROLLBACK');throw error;}
       consecutiveFailures=0;
     }
-    signal.throwIfAborted();this.update(job.id,hadFailure||this.get(job.id).failed?'failed':'completed',hadFailure?'Some instances were not acknowledged. Retry sends only unfinished instances.':'All selected instances were acknowledged.');
+    signal.throwIfAborted();this.update(job.id,hadFailure||this.get(job.id).failed?'failed':'completed',hadFailure?lastDiagnostic?.message ?? 'Some instances were not acknowledged. Retry sends only unfinished instances.':'All selected instances were acknowledged.');
   }
   async close() {this.closing=true;this.current?.controller.abort();await this.running;}
 }

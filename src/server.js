@@ -15,6 +15,7 @@ import { createDemoStudy } from './synthetic.js';
 import { ConnectionService, handleConnectionRoutes } from './connections/ConnectionService.js';
 import { ThumbnailService } from './thumbnails/ThumbnailService.js';
 import { VERSION } from './version.js';
+import { MoveCoordinator } from './dimse/MoveCoordinator.js';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 const mime = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8',
@@ -32,8 +33,9 @@ export const CAPABILITIES = {
     viewer: { name: 'EASI View', version: '1.0.0-rc.1', releaseCandidate: true, loading: 'Metadata-first DICOMweb; requested originals loaded on demand' },
     management: { originalStudyExport: 'Streaming ZIP/ZIP64 with SHA-256 manifest',
         studyRemoval: { previewRequired: true, confirmation: 'DELETE', scope: 'Store archival copies only' } },
-    dimse: { enabled: false, roles: ['C-ECHO SCP/SCU', 'C-STORE SCP/SCU', 'C-FIND SCP/SCU', 'C-GET SCP/SCU', 'C-MOVE SCP'],
-        queryRetrieve: ['Study Root', 'Patient Root'], moveDestinations: 'Explicitly configured peers only', tls: false },
+    dimse: { enabled: false, roles: ['C-ECHO SCP/SCU', 'C-STORE SCP/SCU', 'C-FIND SCP/SCU', 'C-GET SCP/SCU', 'C-MOVE SCP/SCU'],
+        queryRetrieve: ['Study Root', 'Patient Root'], moveDestinations: 'Explicitly configured peers only',
+        retrievalMethods: ['c-get', 'c-move'], moveRetrieval: 'Enumerated IMAGE requests into the existing Store receiver; same-peer callbacks only', tls: false },
     connections: { configuredPeers: ['dicomweb', 'dimse'], transferJobs: true, restartRecovery: true, retry: true, cancel: true },
     thumbnails: { managementApi: true, profile: 'Native 8/16-bit monochrome, native 8-bit RGB/YBR, 8-bit baseline JPEG grayscale/YBR' },
     limitations: ['Not stable 1.0 or a qualified clinical system.', 'Whole-instance transcoding, XML metadata and advanced rendered services are not implemented.',
@@ -42,15 +44,18 @@ export const CAPABILITIES = {
 
 export async function createStoreServer(options) {
     const { dataDir, host = '127.0.0.1', port = 8048, publicUrl, maxInstanceBytes = 536870912,
-        staticRoot = path.join(root, 'dist/public'), credentials = {}, accessProfile, dimsePolicy, dimseHost = isLoopbackAddress(host) ? host : '127.0.0.1' } = options;
+        staticRoot = path.join(root, 'dist/public'), credentials = {}, accessProfile, dimsePolicy, autoStartJobs = true, dimseHost = isLoopbackAddress(host) ? host : '127.0.0.1' } = options;
     const archive = await Archive.open({ dataDir, maxInstanceBytes });
     let auth;
     try { auth = await new Auth(dataDir).open(); } catch (error) { await archive.close(); throw error; }
     let accessPolicy;
     try { accessPolicy = await new AccessPolicy({ dataDir, host, dimseHost }).open({ profile: accessProfile, dimse: dimsePolicy }); }
     catch (error) { await archive.close(); throw error; }
-    let connections;
-    try { connections = await ConnectionService.open({ archive, credentials }); } catch (error) { await archive.close(); throw error; }
+    let connections, moveCoordinator;
+    try {
+        moveCoordinator = new MoveCoordinator({ archive });
+        connections = await ConnectionService.open({ archive, credentials, moveCoordinator, autoStartJobs });
+    } catch (error) { await moveCoordinator?.close(); await archive.close(); throw error; }
     const thumbnails = new ThumbnailService();
     const studyExports = createStudyExportService();
     const activeReaders = new Set();
@@ -210,13 +215,17 @@ export async function createStoreServer(options) {
         } finally { activeReaders.delete(res); releaseRead?.(); }
     });
     server.on('clientError', (_error, socket) => socket.end('HTTP/1.1 400 Bad Request\r\nConnection: close\r\n\r\n'));
-    return { server, archive, auth, capabilities, connections, accessPolicy, studyExports,
+    return { server, archive, auth, capabilities, connections, accessPolicy, studyExports, moveCoordinator,
         async listen() {
             await new Promise((resolve, reject) => { server.once('error', reject); server.listen(port, host, () => { server.off('error', reject); resolve(); }); });
             return server.address();
         },
         async close() {
             closing = true;
+            // Record queue shutdown intent before the receiver aborts a move,
+            // so unfinished jobs remain resumable instead of becoming failed.
+            await connections.close();
+            await moveCoordinator.close();
             await studyExports.close();
             // A paused client must not hold an original read lease forever.
             // Imports receive a short grace period, then their normal durable
@@ -228,7 +237,6 @@ export async function createStoreServer(options) {
                 server.close(() => { clearTimeout(deadline); resolve(); }); server.closeIdleConnections();
             });
             await thumbnails.close();
-            await connections.close();
             await archive.close();
         }
     };

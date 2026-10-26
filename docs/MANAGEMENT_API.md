@@ -1,4 +1,4 @@
-# Management API preview — 0.3.0
+# Management API preview — 0.4.0
 
 These endpoints belong to EASI Store, separately from `/dicomweb`. They power the browser interface and are versioned under `/api/v1`. Management archive reads and writes require a signed-in session or Bearer token in both client access profiles. The explicit public discovery/bootstrap routes are listed below. This first preview has a single administrator role; granular roles are a later milestone.
 
@@ -75,7 +75,7 @@ Management errors have `{error:{code,message}}`. `400` indicates invalid input, 
 
 ## Connections and transfers
 
-A DICOMweb peer is `{name,type:"dicomweb",baseUrl,credentialId?,timeoutMs?}`. Its URL must be HTTP(S), without URL credentials, query, or fragment. A DIMSE peer is `{name,type:"dimse",host,port,calledAeTitle,callingAeTitle?,timeoutMs?}`. Timeout defaults to 30 seconds and is limited to 1–300 seconds. `credentialId` names a private server configuration entry; no credentials or arbitrary headers are returned to the browser. See [OPERATIONS.md](OPERATIONS.md#remote-credentials).
+A DICOMweb peer is `{name,type:"dicomweb",baseUrl,credentialId?,timeoutMs?}`. Its URL must be HTTP(S), without URL credentials, query, or fragment. A DIMSE peer is `{name,type:"dimse",host,port,calledAeTitle,callingAeTitle?,retrievalMethod?,timeoutMs?}`. DIMSE `retrievalMethod` is `"c-get"` (default, including existing records) or `"c-move"`; sending remains C-STORE. C-MOVE derives its destination from the active local receiver and requires the [correlated callback setup](DIMSE.md#retrieve-with-c-move). DICOMweb peers reject this DIMSE-only option. Timeout defaults to 30 seconds and is limited to 1–300 seconds. `credentialId` names a private server configuration entry; no credentials or arbitrary headers are returned to the browser. See [OPERATIONS.md](OPERATIONS.md#remote-credentials).
 
 Remote search criteria accept `PatientName`, `PatientID`, `IssuerOfPatientID`, `PatientBirthDate`, `StudyDate`, `StudyDescription`, `AccessionNumber`, `ModalitiesInStudy`, and `StudyInstanceUID`. Limit is 1–1,000; the UI requests 100. DICOMweb supports offset pagination; DIMSE searches require refined criteria rather than offset pagination. The return value is `{items,hasMore,offset}`, with normalized study summaries. Search responses are bounded to 4 MiB.
 

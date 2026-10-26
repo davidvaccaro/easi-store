@@ -132,3 +132,6 @@
   .remove-study-modal .modal-footer > .button-row { flex-wrap: wrap; justify-content: flex-end; }
   .remove-study-modal .modal-footer .button { font-size: 10px; }
 }
+
+/* Callback guidance reads as a single block on desktop and mobile. */
+.move-receiver-notice{display:block}.move-receiver-notice>p{margin-top:10px}.move-receiver-notice code{overflow-wrap:anywhere}

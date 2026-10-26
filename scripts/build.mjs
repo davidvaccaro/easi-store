@@ -10,7 +10,7 @@ await rm('dist', { recursive: true, force: true });
 await mkdir('dist/public/assets', { recursive: true });
 await build({ entryPoints: ['ui/main.tsx'], bundle: true, format: 'esm', target: 'es2022', jsx: 'automatic',
     outfile: 'dist/public/assets/app.js', minify: true, legalComments: 'external', sourcemap: false,
-    define: { 'process.env.NODE_ENV': '"production"' } });
+    define: { 'process.env.NODE_ENV': '"production"', '__EASI_STORE_VERSION__': JSON.stringify(version) } });
 await cp('ui/index.html', 'dist/public/index.html');
 const sdkRoot = path.join(root, 'node_modules/@xinonix/easi-view/dist');
 const pkg = JSON.parse(await readFile('node_modules/@xinonix/easi-view/package.json', 'utf8'));

@@ -21,14 +21,14 @@ The source, tests, and runtime capabilities determine what has actually shipped;
 **Implemented in the 0.2.0 preview, within the published profiles:**
 
 - DIMSE Verification/Storage receiving and outgoing SCU workflows, preserving encoded datasets and acknowledging receiving only after durable commit.
-- Study Root / Patient Root C-FIND, C-GET, and configured-destination C-MOVE SCPs, Storage role negotiation, cancellation, pending/final/sub-operation statuses, and failure lists. Configured transfer jobs use hierarchical Study Root enumeration and durable C-GET SCU; remote C-MOVE initiation remains future work.
+- Study Root / Patient Root C-FIND, C-GET, and configured-destination C-MOVE SCPs, Storage role negotiation, cancellation, pending/final/sub-operation statuses, and failure lists. Configured transfer jobs use hierarchical Study Root enumeration and durable C-GET SCU. The 0.4.0 preview adds per-connection C-MOVE SCU into the existing receiver with exact callback correlation; see [the initial profile](DIMSE.md#retrieve-with-c-move).
 - Expanded QIDO indexed matching/return keys, comma/repeated `includefield`, pagination and stable ordering.
 - Nested JSON dataset metadata and protected referenced values; supported native/original-compressed frame retrieval with explicit resource/fragment limits.
 - Native little-endian frame/word conversion. Whole-instance conversion and compressed transcoding remain unimplemented; stored representations remain preserved.
 - Bounded instance/series management thumbnails and independent EASI View connection integration. The 0.3.0 embedded path now uses metadata-first/on-demand instance loading instead of whole-series buffering; SDK per-object, decoded-cache, metadata, and stack limits still apply.
 - Named DICOMweb/DIMSE peers, real connection tests, remote search, and persistent queued sends/retrievals with instance checkpoints, restart, manual retry, cancellation, and destination revision guards.
 
-**Continuing interoperability work:** broader independent clients/modalities and negotiated syntax coverage, remote C-MOVE initiation, optional/relational query profiles, better job scheduling/retention and timed retries, larger-study viewer workflow qualification, DICOM TLS, and production network identity. Follow [STATUS.md](STATUS.md), [DICOMWEB.md](DICOMWEB.md), [DIMSE.md](DIMSE.md), and candidate-specific [VALIDATION.md](VALIDATION.md).
+**Continuing interoperability work:** broader independent clients/modalities and negotiated syntax coverage, additional C-MOVE callback topologies and throughput qualification, optional/relational query profiles, better job scheduling/retention and timed retries, larger-study viewer workflow qualification, DICOM TLS, and production network identity. Follow [STATUS.md](STATUS.md), [DICOMWEB.md](DICOMWEB.md), [DIMSE.md](DIMSE.md), and candidate-specific [VALIDATION.md](VALIDATION.md).
 
 EASI JS's existing DIMSE client/receiver support does not automatically provide a production Store SCP. A receiver that acknowledges before persistence must not be used unchanged as a durable archive listener.
 
@@ -40,6 +40,15 @@ EASI JS's existing DIMSE client/receiver support does not automatically provide 
 - These workflows are subject to the candidate evidence in [VALIDATION.md](VALIDATION.md). They do not establish stable 1.0 or production/clinical qualification.
 
 ## Phase 3 — research and data management
+
+Prioritize documented research workflows rather than a feature-for-feature Orthanc checklist. The proposed next feature is a **dataset snapshot export**: select and review series, freeze exact instance/hash membership, and consume that manifest through bounded, verified downloads. It is not implemented. [AI dataset workflows](AI_DATASETS.md) records the evidence, narrow scope, and limitations; the sources demonstrate workflow fit, not measured market demand.
+
+- Keep independent client compatibility, recovery, and resource qualification as release gates. A protocol route or a successful file import alone does not qualify a training or annotation integration.
+- Start cohort work with selections and reproducible manifests. Persistent collections/labels and richer bulk actions can follow demonstrated usage; organizational labels are distinct from training annotations.
+- Prioritize an explicit programmatic retrieval example before a general routing engine or broad migration tooling.
+- Defer arbitrary tag editing and general anonymization until a concrete workflow justifies their qualification. Any deidentified derivative must preserve original objects and maintain UID/reference consistency and provenance.
+
+The broader Phase 3 target remains:
 
 - Collections and labels that reference archived instances without duplicating them.
 - Safe import from folders/media/DICOMDIR and resumable bulk import manifests.

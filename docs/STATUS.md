@@ -1,4 +1,4 @@
-# EASI Store status — 0.3.0
+# EASI Store status — 0.4.0
 
 **V1 workflow preview.** EASI Store is a working, independent, single-host archive. It is source available under the Community License; it is not a claim of full DICOM conformance, Orthanc parity, or production/clinical qualification.
 
@@ -10,7 +10,7 @@
 | DICOMweb | Indexed QIDO hierarchy; binary Part 10 STOW; original WADO; nested JSON metadata; supported native/original-compressed frame and referenced-bulk retrieval |
 | DIMSE server | Verification / Storage, Study Root and Patient Root FIND / GET / configured-destination MOVE, pending/final statuses, cancellation, durable receiving |
 | Connected archives | Named DICOMweb/DIMSE peers, connection tests, remote study searches, explicit send/retrieve workflows |
-| Transfers | Streamed STOW/C-STORE sends and WADO/durable C-GET retrievals; persistent per-instance checkpoints, restart, retry, cancellation |
+| Transfers | Streamed STOW/C-STORE sends and WADO/durable C-GET and correlated C-MOVE retrievals; persistent per-instance checkpoints, restart, retry, cancellation |
 | Client access | Explicit authenticated or loopback-only local research DICOMweb profiles; administration remains authenticated; persisted AE/source-IP DIMSE trust and separate listener binding |
 | Security | Local administrator, HTTP-only sessions, Bearer integrations, host/origin mutation checks, fixed configured destinations, server-held remote credentials |
 | Deployment | Docker, source launchers, portable runtime packaging; platform-signed installers remain planned |
@@ -23,6 +23,6 @@ HTTP/file imports preserve their original Part 10 bytes. DIMSE transmits dataset
 
 ## Next work
 
-The 0.3.0 milestone adds the everyday study workflows described in [STUDY_MANAGEMENT.md](STUDY_MANAGEMENT.md). The next release step is qualification of the exact candidate: resource/cancellation limits, backup/restore/upgrade, independent protocol clients, operational guidance, and clean installations. Schema 2 requires a full pre-upgrade backup; rollback uses that backup rather than an older runtime on the upgraded catalog. Collections/labels, DICOMDIR export, controlled anonymization, routing, and migration remain later Phase 3 work. Protocol qualification and standards expansion continue alongside that work. Whole-instance transcoding, XML metadata/STOW, standard rendered resources, WADO-URI, UPS/workitems, worklists, MPPS, Storage Commitment, DICOM TLS, PostgreSQL/S3, OIDC/RBAC, automatic routing, and signed installers remain planned.
+The 0.4.0 milestone adds connection-selectable C-MOVE retrieval into the existing durable receiver; the bounded callback profile is documented in [DIMSE.md](DIMSE.md). The everyday study workflows are described in [STUDY_MANAGEMENT.md](STUDY_MANAGEMENT.md). The next release step is qualification of the exact candidate: resource/cancellation limits, backup/restore/upgrade, independent protocol clients, operational guidance, and clean installations. Schema 2 requires a full pre-upgrade backup; rollback uses that backup rather than an older runtime on the upgraded catalog. The proposed next feature is [Dataset Snapshot Export](AI_DATASETS.md), a narrow reproducibility workflow for research and AI consumers. Broad collections/labels, DICOMDIR export, controlled anonymization, routing, and migration remain demand-led Phase 3 work. Protocol qualification and standards expansion continue alongside that work. Whole-instance transcoding, XML metadata/STOW, standard rendered resources, WADO-URI, UPS/workitems, worklists, MPPS, Storage Commitment, DICOM TLS, PostgreSQL/S3, OIDC/RBAC, automatic routing, and signed installers remain planned.
 
-Stable 1.0 still requires the release gates in [BACKLOG.md](BACKLOG.md), including qualification of the exact candidate. Historical 0.1.0–0.2.1 results do not certify a changed 0.3.0 artifact. [VALIDATION.md](VALIDATION.md) separates baseline evidence from checks of the current candidate.
+Stable 1.0 still requires the release gates in [BACKLOG.md](BACKLOG.md), including qualification of the exact candidate. Historical 0.1.0–0.2.1 results do not certify a changed 0.4.0 artifact. [VALIDATION.md](VALIDATION.md) separates baseline evidence from checks of the current candidate.

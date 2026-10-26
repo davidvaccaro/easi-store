@@ -14,7 +14,7 @@ export { sendStoredInstance } from './wire.js';
 export class StorageScp {
   constructor({ archive, auth, host = '127.0.0.1', port = 4248, aeTitle = 'EASISTORE', maxConnections = 8,
     maxQueryResults = 10000, maxRetrieveInstances = 10000, resolveMoveDestination = () => null, associationPolicy,
-    archiveReady = () => Boolean(auth?.record) }) {
+    archiveReady = () => Boolean(auth?.record), moveCoordinator = null }) {
     if (!/^[A-Z0-9_ -]{1,16}$/.test(aeTitle)) throw new Error('DIMSE AE title must contain 1–16 uppercase letters, numbers, spaces, _ or -.');
     if (![maxConnections,maxQueryResults,maxRetrieveInstances].every(value => Number.isInteger(value) && value > 0 && value <= 65535)) throw new Error('Invalid DIMSE operation limits.');
     if (associationPolicy === undefined) {
@@ -22,23 +22,38 @@ export class StorageScp {
       associationPolicy = ({remoteAddress}) => isLoopbackAddress(remoteAddress);
     }
     if (typeof resolveMoveDestination !== 'function' || typeof associationPolicy !== 'function' || typeof archiveReady !== 'function') throw new Error('DIMSE policies must be functions.');
-    Object.assign(this,{ archive,auth,host,port,aeTitle,maxConnections,maxQueryResults,maxRetrieveInstances,resolveMoveDestination,associationPolicy,archiveReady });
+    if (moveCoordinator && moveCoordinator.archive !== archive) throw new Error('C-MOVE must use this receiver’s archive.');
+    Object.assign(this,{ archive,auth,host,port,aeTitle,maxConnections,maxQueryResults,maxRetrieveInstances,resolveMoveDestination,associationPolicy,archiveReady,moveCoordinator });
     this.sockets = new Set(); this.server = net.createServer(socket => this.accept(socket));
   }
   async listen() {
     await new Promise((resolve,reject) => { this.server.once('error',reject); this.server.listen(this.port,this.host,() => { this.server.off('error',reject); resolve(); }); });
+    try { this.moveCoordinator?.attach(this); }
+    catch (error) { await new Promise(resolve => this.server.close(resolve)); throw error; }
     return this.server.address();
   }
   accept(socket) {
     if (this.sockets.size >= this.maxConnections) { socket.destroy(); return; }
     this.sockets.add(socket); socket.setTimeout(120000,() => socket.destroy()); socket.on('error',() => {});
     const context = {contexts:new Map(),associated:false,commandChunks:[],commandBytes:0,store:null,active:null,operation:null,pendingStores:new Map(),peerMax:16384,closed:false,nextMessageId:1};
+    // receive() may be awaiting ingestion/backpressure rather than the socket
+    // iterator. Tear down its spool immediately when a callback is canceled or
+    // disconnected, so that await can unwind and release the import reservation.
+    socket.once('close',() => {
+      context.closed = true; context.operation?.abort.abort();
+      context.store?.destroy(new Error('DIMSE association closed.'));
+      for (const pending of context.pendingStores.values()) pending.reject(new Error('DIMSE association closed.'));
+      context.pendingStores.clear();
+    });
     socket.finishedTask = this.receive(socket,context).catch(() => {
       if (!socket.destroyed) socket.end(pdu(7,Buffer.from([0,0,2,0])));
     }).finally(async () => {
       context.closed = true; context.operation?.abort.abort();
       context.store?.destroy(new Error('DIMSE association closed.'));
-      context.active?.releaseImport?.();
+      if (context.active?.kind === 'store') {
+        const outcome = context.active.outcome ? await context.active.outcome : {error:new Error('DIMSE association closed.')};
+        context.active.moveClaim?.finish(outcome); context.active.releaseImport?.();
+      }
       for (const pending of context.pendingStores.values()) pending.reject(new Error('DIMSE association closed.'));
       context.pendingStores.clear();
       if (!socket.destroyed) socket.destroy();
@@ -118,7 +133,7 @@ export class StorageScp {
     for (let i = 0; i < body.length;) {
       if (i + 6 > body.length) throw new Error('Truncated data value.');
       const length = body.readUInt32BE(i),id = body[i + 4],flags = body[i + 5],end = i + 4 + length;
-      if (length < 2 || end > body.length || flags > 3) throw new Error('Invalid data value.');
+      if (length <= 2 || end > body.length || flags > 3) throw new Error('Invalid data value.');
       const pc = context.contexts.get(id); if (!pc?.accepted) throw new Error('Unaccepted context.');
       const bytes = body.subarray(i + 6,end);
       if (flags & 1) {
@@ -157,12 +172,16 @@ export class StorageScp {
     if (!command.messageId || command.sopClassUid !== pc.abstract || !pc.requestorScu || command.field !== 0x30 && ![0,1,2].includes(command.priority)) throw new Error('Invalid DIMSE command or role.');
     if (command.field === 0x30 && pc.abstract === VERIFICATION && command.datasetType === 0x101) await this.respond(socket,context,id,command,0);
     else if (command.field === 1 && pc.abstract.startsWith('1.2.840.10008.5.1.4.1.1.') && command.datasetType !== 0x101 && uidValid(command.sopUid)) {
-      let releaseImport, reservationError;
-      try { releaseImport = this.archive.acquireImportReservation(); }
+      let releaseImport, reservationError, moveClaim;
+      try {
+        moveClaim = this.moveCoordinator?.claimStore({command,callingAeTitle:context.callingAeTitle,remoteAddress:socket.remoteAddress,cancel:() => socket.destroy()});
+        releaseImport = this.archive.acquireImportReservation();
+      }
       catch (error) { reservationError = error; }
       // Reserve accepted C-STORE before its first dataset PDV. A sender may
       // pause here; that pending import must still exclude study removal.
-      context.active = {kind:'store',command,id,pc,discarded:false,releaseImport,reservationError};
+      context.active = {kind:'store',command,id,pc,discarded:false,releaseImport,reservationError,moveClaim};
+      if (reservationError) moveClaim?.finish({error:reservationError});
     }
     else if (pc.query && command.field === pc.query.operation && command.datasetType !== 0x101) context.active = {kind:'query',command,id,pc,chunks:[],bytes:0};
     else { await this.respond(socket,context,id,command,0x122); if (command.datasetType !== 0x101) throw new Error('Unsupported service.'); }
@@ -172,7 +191,7 @@ export class StorageScp {
       const stream = new PassThrough({highWaterMark:65536}); stream.on('error',() => {}); context.store = stream;
       if (active.reservationError || !this.archiveReady()) { active.discarded = true; active.outcome = Promise.resolve({error:active.reservationError ?? {statusCode:403}}); }
       else {
-        active.outcome = this.archive.ingest(stream,{source:`dimse:${this.aeTitle}`,expectedSopUid:active.command.sopUid,expectedSopClassUid:active.command.sopClassUid})
+        active.outcome = this.archive.ingest(stream,active.moveClaim?.options ?? {source:`dimse:${this.aeTitle}`,expectedSopUid:active.command.sopUid,expectedSopClassUid:active.command.sopClassUid})
           .then(result => ({result}),error => { active.discarded = true; stream.destroy(); return {error}; });
         stream.write(part10Header({sopUid:active.command.sopUid,sopClassUid:active.command.sopClassUid,transferSyntaxUid:active.pc.transferSyntax}));
       }
@@ -181,6 +200,7 @@ export class StorageScp {
     if (last) {
       try {
         context.store.end(); const outcome = await active.outcome;
+        active.moveClaim?.finish(outcome);
         await this.respond(socket,context,active.id,active.command,outcome.error ? outcome.error.statusCode === 409 && outcome.error.code === 'uid-conflict' ? 0x111 : 0xa700 : 0);
       } finally {
         context.store.destroy(); context.store = null; active.releaseImport?.(); context.active = null;
@@ -258,6 +278,7 @@ export class StorageScp {
     } finally { clearTimeout(timer); context.pendingStores.delete(messageId); }
   }
   async close() {
+    this.closing = true; this.moveCoordinator?.detach(this);
     const sockets = [...this.sockets]; for (const socket of sockets) socket.destroy();
     if (this.server.listening) await new Promise(resolve => this.server.close(resolve));
     await Promise.allSettled(sockets.map(socket => socket.finishedTask));

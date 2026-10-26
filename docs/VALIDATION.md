@@ -194,3 +194,67 @@ typed removal, physical reclamation, unselected-study retention and restart.
 The [Linux checks and Docker build](https://github.com/davidvaccaro/easi-store/actions/runs/40196053721)
 also passed for the same source. These are preview qualifications for the named
 profiles/platforms, not signed installers or a stable-v1 release declaration.
+
+## Correlated C-MOVE — 0.4.0 preview, 2026-10-26
+
+The integrated macOS ARM64 candidate passed **188 generated-data tests**, source
+asset checks, TypeScript, production build and all 61 distribution hashes under
+Node 24.22.1. New coverage includes the real callback receiver, durable ACK gates,
+expected study/series/SOP/class, originator AE/message ID, calling AE and source IP,
+missing callbacks, unknown destinations, duplicate retrieval, invalid/failure
+responses, partial reception, cancellation, late callbacks, deadlines, failed
+persistence, receiver closure, safe diagnostics and queue retry/restart. Allocation
+quarantine, the next message ID and bounded historical originator AEs persist
+across restart. Tests inject a state-write failure to prove import reservations
+are released; early remote final responses cannot leave a receiving stream stuck.
+Empty PDVs are rejected instead of growing zero-byte fragment arrays.
+
+Three real-CLI tests verify listener-before-queue startup, disabled-receiver
+failure without remote enumeration, and interruption before any callback followed
+by successful restart. POSIX checks verify queued shutdown intent; the Windows
+case allows forced process termination and requires recovery on next startup.
+Existing C-GET/DICOMweb tests remain part of the full suite.
+
+The optional independent check is reproducible with an installed Orthanc binary:
+
+```sh
+node scripts/qualify-orthanc-move.mjs /absolute/path/to/Orthanc
+```
+
+It starts an isolated Orthanc with generated objects and never connects to an
+existing archive. Orthanc **1.12.8** passed whole-study (4), selected-series (2),
+and single-instance (1) C-MOVE jobs, exact encoded-dataset hash comparisons,
+duplicate retrieval and missing-destination failure despite a preexisting object.
+Its control calling AE differs from the receiving AE. Native tests separately
+cover standard A801 unknown-destination diagnostics; a peer may instead return a
+less-specific failure status. This evidence qualifies the documented same-AE/IP,
+originator-bearing callback profile, not arbitrary multi-host PACS topologies.
+
+Disposable Chrome passed **8 connection UI checks**, including persisted C-GET /
+C-MOVE editing, fixed receiver guidance, real C-ECHO and its callback disclaimer,
+synthetic remote search, disabled receiver copy and readable 390 px layout.
+There were no runtime exceptions, console errors or external requests.
+
+The Linux ARM64 runtime image passed **8 existing smoke groups** and **4 additional
+cross-container C-MOVE groups** under Node 24.22.1. The latter use a private bridge
+with exact remote AE/IP trust, real callbacks, encoded-dataset hash verification,
+duplicate retrieval and restart persistence. Image ID:
+`sha256:ffcda89d83aa67297329e2a6cfbd50a7589725a71f9fb61ff4942a1ac1d593b5`.
+The image's 91 runtime/build/package/notice files matched the tested source.
+Synthetic test containers, network and volume were removed after qualification.
+Cross-platform native packages are qualified separately for the pushed source;
+these local results are not a stable release or production qualification.
+
+The default IPv4-only Linux ARM64 Docker check also passed all **188 tests**
+with zero skips, followed by TypeScript/build/distribution checks; no IPv6
+container option is required. The source-IP rejection fixture exercises the
+active guard during a real IPv4 operation, and a correct actual callback then
+succeeds. Other callback mismatch cases use real sockets throughout.
+
+Before the local update, the prior 0.3.0 build made a protected full offline
+backup. All 2,998 backup entries and all 2,992 live original hashes verified.
+After startup, archive totals remained one patient, two studies, 20 series and
+1,596,352,936 bytes; both saved connections and their C-GET default were retained.
+Local research persisted, and unauthenticated management requests remained 401.
+No existing Orthanc configuration or imaging data was used or changed by these
+qualification checks.

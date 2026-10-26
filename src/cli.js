@@ -89,7 +89,7 @@ export async function main(args = process.argv.slice(2)) {
         if (!o.input) throw new Error('Provide --input with a verified backup directory and --data-dir with a new destination.');
         if (existsSync(dataDir)) throw new Error('Restore destination must not exist.');
         const input = path.resolve(o.input), manifest = JSON.parse(await readFile(path.join(input, 'backup-manifest.json'), 'utf8'));
-        if (manifest.product !== 'EASI Store' || !['0.1.0', '0.2.0', '0.2.1', VERSION].includes(manifest.version) || !Array.isArray(manifest.files)) throw new Error('Unsupported backup manifest.');
+        if (manifest.product !== 'EASI Store' || !['0.1.0', '0.2.0', '0.2.1', '0.3.0', VERSION].includes(manifest.version) || !Array.isArray(manifest.files)) throw new Error('Unsupported backup manifest.');
         for (const file of manifest.files) {
             const p = path.resolve(input, file.path);
             if (!p.startsWith(input + path.sep) || (await stat(p)).size !== file.bytes || await fileHash(p) !== file.sha256) throw new Error('Backup integrity verification failed.');
@@ -124,13 +124,15 @@ export async function main(args = process.argv.slice(2)) {
         if (!info.isFile() || info.size > 65536) throw new Error('Use a DIMSE policy JSON file of at most 64 KiB.');
         dimsePolicy = JSON.parse(await readFile(dimsePeersFile, 'utf8'));
     }
-    const app = await createStoreServer({ dataDir, host, port, publicUrl: o['public-url'] || process.env.EASI_STORE_PUBLIC_URL, credentials, accessProfile, dimsePolicy, dimseHost });
+    // Resume persisted jobs only after the optional receiving AE has attached.
+    const app = await createStoreServer({ dataDir, host, port, publicUrl: o['public-url'] || process.env.EASI_STORE_PUBLIC_URL, credentials, accessProfile, dimsePolicy, dimseHost, autoStartJobs: false });
     let dimse;
     try {
         await app.listen();
         if (!o['no-dimse'] && process.env.EASI_STORE_DIMSE !== 'off') {
             const dimsePort = portNumber(o['dimse-port'] || process.env.EASI_STORE_DIMSE_PORT || 4248, 'DIMSE port');
             dimse = new StorageScp({ archive: app.archive, auth: app.auth, host: dimseHost, port: dimsePort, aeTitle: o['ae-title'] || process.env.EASI_STORE_AE_TITLE || 'EASISTORE',
+                moveCoordinator: app.moveCoordinator,
                 resolveMoveDestination: aeTitle => app.connections.resolveMoveDestination(aeTitle),
                 associationPolicy: peer => app.accessPolicy.canAssociate(peer),
                 archiveReady: () => app.accessPolicy.record.profile === 'local-research' || Boolean(app.auth.record) });
@@ -138,6 +140,8 @@ export async function main(args = process.argv.slice(2)) {
             app.capabilities.dimse.host = dimseHost; app.capabilities.dimse.port = dimsePort; app.capabilities.dimse.aeTitle = dimse.aeTitle;
             console.log(`DIMSE: ${dimse.aeTitle} on ${dimseHost}:${dimsePort} (C-ECHO / durable C-STORE / FIND / GET / MOVE).`);
         }
+        app.connections.jobs.autoStart = true;
+        app.connections.jobs.start();
     } catch (error) { await dimse?.close(); await app.close(); throw error; }
     const url = `http://${host === '0.0.0.0' || host === '::' ? '127.0.0.1' : host.includes(':') ? `[${host}]` : host}:${port}/`;
     console.log(`EASI Store ${VERSION} preview: ${url}`);
@@ -152,7 +156,7 @@ export async function main(args = process.argv.slice(2)) {
     const stop = async () => {
         if (stopping) return; stopping = true;
         console.log('Finishing pending archive operations…');
-        await dimse?.close(); await app.close();
+        await app.connections.close(); await dimse?.close(); await app.close();
     };
     for (const signal of ['SIGINT', 'SIGTERM']) process.once(signal, () => stop().catch(() => { process.exitCode = 1; }));
     return { app, dimse, stop };

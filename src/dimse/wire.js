@@ -40,7 +40,8 @@ export function decodeCommand(bytes) {
   const us = tag => { const value = elements.get(tag); if (value === undefined) return undefined; if (value.length !== 2) throw new Error('Invalid command US.'); return value.readUInt16LE(); };
   const str = tag => elements.get(tag)?.toString('ascii').replace(/[\0 ]+$/, '');
   return { field: us(0x0100), messageId: us(0x0110), respondedTo: us(0x0120), datasetType: us(0x0800), status: us(0x0900),
-    priority: us(0x0700), sopClassUid: str(0x0002), sopUid: str(0x1000), moveDestination: str(0x0600), elements };
+    priority: us(0x0700), sopClassUid: str(0x0002), sopUid: str(0x1000), moveDestination: str(0x0600),
+    moveOriginatorAeTitle: elements.get(0x1030)?.toString('latin1').replace(/ +$/, ''), moveOriginatorMessageId: us(0x1031), elements };
 }
 export function item(type, body) { const h = Buffer.alloc(4); h[0] = type; h.writeUInt16BE(body.length, 2); return Buffer.concat([h, body]); }
 export function items(bytes, start = 0) {

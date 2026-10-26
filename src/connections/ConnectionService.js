@@ -6,7 +6,7 @@ import { NodeDimseQueryRetrieveSourceTransport } from '@xinonix/easi-js/dimse/no
 import { validUid } from '../archive/errors.js';
 import { httpError, json, readJson } from '../http/utils.js';
 import { RelatedReader, parseRelatedType } from '../dicomweb/multipart.js';
-import { TransferQueue } from '../jobs/TransferQueue.js';
+import { TransferQueue, transferDiagnostic } from '../jobs/TransferQueue.js';
 
 const queryKeys = new Set(['PatientName', 'PatientID', 'IssuerOfPatientID', 'PatientBirthDate', 'StudyDate', 'StudyDescription', 'AccessionNumber', 'ModalitiesInStudy', 'StudyInstanceUID']);
 const returnKeys = ['StudyInstanceUID','PatientID','PatientName','StudyDate','StudyDescription','ModalitiesInStudy','NumberOfStudyRelatedSeries','NumberOfStudyRelatedInstances'];
@@ -50,9 +50,24 @@ function checkedSelection(selection) {
 /** Configured destinations only. Requests cannot supply a URL, header, or socket override. */
 export class ConnectionService {
   static async open(options) { const service = new ConnectionService(options); service.initialize(); service.jobs.start(); return service; }
-  constructor({ archive, credentials = {}, transports = {}, autoStartJobs = true }) {
+  constructor({ archive, credentials = {}, transports = {}, autoStartJobs = true, moveCoordinator = null }) {
     this.archive = archive; this.db = archive.db; this.credentials = credentials; this.transports = transports; this.autoStartJobs = autoStartJobs;
+    this.configureMoveReceiver(moveCoordinator);
     this.jobs = new TransferQueue({ db:this.db, service:this, autoStart:autoStartJobs });
+  }
+  configureMoveReceiver(coordinator) {
+    if(coordinator !== null && (typeof coordinator?.preflight !== 'function' || typeof coordinator?.retrieve !== 'function')) throw new TypeError('Configure a C-MOVE coordinator or null.');
+    this.moveCoordinator=coordinator;
+  }
+  preflightTransfer(peer,direction) {
+    if(direction !== 'retrieve' || peer.type !== 'dimse' || (peer.retrievalMethod ?? 'c-get') !== 'c-move') return;
+    if(!this.moveCoordinator) throw Object.assign(httpError(409,'C-MOVE requires this Store’s active DIMSE receiver. Enable the receiver or choose C-GET for this connection.'),{code:'move-receiver-unavailable'});
+    try { return this.moveCoordinator.preflight(peer); }
+    catch(error) {
+      const diagnostic=transferDiagnostic(error);
+      if(diagnostic) throw Object.assign(httpError(409,diagnostic.message),{code:diagnostic.code});
+      throw error;
+    }
   }
   initialize() {
     this.db.exec(`CREATE TABLE IF NOT EXISTS connections (id TEXT PRIMARY KEY,config TEXT NOT NULL,revision INTEGER NOT NULL,createdAt TEXT NOT NULL,updatedAt TEXT NOT NULL);`);
@@ -60,11 +75,12 @@ export class ConnectionService {
   }
   validate(input) {
     if (!plainObject(input)) throw httpError(400,'Send a connection object.');
-    const allowed = ['name','type','baseUrl','host','port','calledAeTitle','callingAeTitle','credentialId','timeoutMs'];
+    const allowed = ['name','type','baseUrl','host','port','calledAeTitle','callingAeTitle','credentialId','timeoutMs','retrievalMethod'];
     if (Object.keys(input).some(key => !allowed.includes(key))) throw httpError(400,'Unexpected connection field.');
     const config = {name:text(input.name,80,'connection name'),type:input.type,timeoutMs:input.timeoutMs ?? 30000};
     if (!Number.isInteger(config.timeoutMs) || config.timeoutMs < 1000 || config.timeoutMs > 300000) throw httpError(400,'Timeout must be between 1 and 300 seconds.');
     if (input.type === 'dicomweb') {
+      if(input.retrievalMethod != null) throw httpError(400,'Retrieval method applies only to DIMSE connections.');
       let url; try { url = new URL(input.baseUrl); } catch { throw httpError(400,'Enter a complete DICOMweb HTTP or HTTPS base URL.'); }
       if (!['http:','https:'].includes(url.protocol) || url.username || url.password || url.search || url.hash || url.href.length > 2048) throw httpError(400,'DICOMweb URLs must use HTTP(S), without embedded credentials, query, or fragment.');
       config.baseUrl = url.href.replace(/\/$/,'');
@@ -78,11 +94,13 @@ export class ConnectionService {
       if (!/^[A-Za-z0-9.:[\]_-]+$/.test(config.host)) throw httpError(400,'Invalid peer hostname.');
       config.port = Number(input.port); if (!Number.isInteger(config.port) || config.port < 1 || config.port > 65535) throw httpError(400,'Invalid DIMSE port.');
       config.calledAeTitle = ae(input.calledAeTitle,'called AE title'); config.callingAeTitle = ae(input.callingAeTitle || 'EASISTORE','calling AE title');
+      config.retrievalMethod=input.retrievalMethod ?? 'c-get';
+      if(!['c-get','c-move'].includes(config.retrievalMethod)) throw httpError(400,'Choose c-get or c-move for DIMSE retrieval.');
       if (input.credentialId) throw httpError(400,'HTTP credentials do not apply to DIMSE.');
     } else throw httpError(400,'Choose dicomweb or dimse.');
     return config;
   }
-  row(row) { return row ? {...JSON.parse(row.config),id:row.id,revision:row.revision,createdAt:row.createdAt,updatedAt:row.updatedAt} : null; }
+  row(row) { if(!row)return null;const config=JSON.parse(row.config);return {...config,...(config.type==='dimse'?{retrievalMethod:config.retrievalMethod ?? 'c-get'}:{}),id:row.id,revision:row.revision,createdAt:row.createdAt,updatedAt:row.updatedAt}; }
   list() { return {items:this.db.prepare('SELECT * FROM connections ORDER BY createdAt,id').all().map(row=>this.row(row))}; }
   get(id) { const peer = this.row(this.db.prepare('SELECT * FROM connections WHERE id=?').get(id)); if (!peer) throw httpError(404,'Connection not found.'); return peer; }
   create(input) { const config=this.validate(input), id=randomUUID(), now=new Date().toISOString(); this.db.prepare('INSERT INTO connections VALUES (?,?,?,?,?)').run(id,JSON.stringify(config),1,now,now); return this.get(id); }
@@ -144,6 +162,7 @@ export class ConnectionService {
     if(typeof input.connectionId!=='string'||!/^[a-f0-9-]{36}$/.test(input.connectionId))throw httpError(400,'Choose a configured connection.');
     const peer=this.get(input.connectionId),selection=checkedSelection(input.selection);
     if (!['send','retrieve'].includes(input.direction)) throw httpError(400,'Choose send or retrieve.');
+    this.preflightTransfer(peer,input.direction);
     let records;
     if (input.direction==='send') {
       const keys=['studyUid','seriesUid','sopUid'].filter(key=>selection[key]);
@@ -202,6 +221,7 @@ export class ConnectionService {
     return records;
   }
   async transfer(peer,direction,item,signal) {
+    this.preflightTransfer(peer,direction);
     const releaseRead = direction === 'send' ? this.archive.acquireReadLease() : null;
     try {
     if (this.transports.transfer) return await this.transports.transfer(peer,direction,item,signal);
@@ -223,6 +243,14 @@ export class ConnectionService {
       return {outcome:acknowledged?.['00081196'] ? 'warning':'sent'};
     }
     if(peer.type==='dimse') {
+      if(peer.retrievalMethod==='c-move') {
+        const result=await this.moveCoordinator.retrieve(this.association(peer),item,{signal,source:`connection:${peer.id}`});
+        const record=this.archive.getInstance(item.studyUid,item.seriesUid,item.sopUid);
+        if(!result || result.status!==0 || result.failed || result.remaining || !result.stored&&!result.duplicates || !record || record.sopClassUid!==item.sopClassUid) {
+          const code='move-object-missing';throw Object.assign(httpError(502,transferDiagnostic({code}).message),{code});
+        }
+        return {outcome:result.duplicates?'duplicate':'stored'};
+      }
       const {retrieveToArchive}=await import('../dimse/StorageScp.js');
       const result=await retrieveToArchive(this.association(peer),{...item,storageTransferSyntaxUids:storageSyntaxes,...(item.sopClassUid?{storageSopClassUids:[item.sopClassUid]}:{})},this.archive,{signal,source:`connection:${peer.id}`});
       if(result.failed||!result.stored&&!result.duplicates||result.status!==0&&result.status!==0xb000)throw httpError(502,'The remote DIMSE peer did not complete durable instance retrieval.');

@@ -1,4 +1,4 @@
-# DIMSE interoperability preview — 0.2.1
+# DIMSE interoperability preview — 0.4.0
 
 Default source/portable listener: **host `127.0.0.1`, TCP port `4248`, called AE title `EASISTORE`**. DIMSE is enabled by the normal CLI startup and can be disabled with `--no-dimse` or `EASI_STORE_DIMSE=off`. Verification can respond before administrator setup. Archival storage/query/retrieval requires completed administrator setup in the authenticated profile; explicitly selected local research mode can accept local clients before setup. Docker requires explicit network listener, peer policy, and port publication for DIMSE clients outside the container.
 
@@ -42,7 +42,7 @@ In Docker, the default DIMSE listener is private to the container and Compose do
 | C-STORE | Durable storage receive | Streamed queued sends and C-MOVE delivery |
 | C-FIND | Study Root and Patient Root query | Configured remote study searches; hierarchical series/image enumeration for transfers |
 | C-GET | Study Root and Patient Root retrieval; Storage SCU sub-operations on the same association | Queued durable retrieval through configured peers |
-| C-MOVE | Study Root and Patient Root retrieval; Storage SCU sub-operations to a configured destination | No remote C-MOVE initiation UI/job in this release; use C-GET retrieval |
+| C-MOVE | Study Root and Patient Root retrieval; Storage SCU sub-operations to a configured destination | Queued Study Root IMAGE retrieval to this Store’s existing receiver, selected per connection |
 | Worklist / MPPS / Storage Commitment | Planned | Planned |
 
 The SCP supports PATIENT (Patient Root), STUDY, SERIES, and IMAGE levels. Retrieval requires unique hierarchy keys: Patient ID for patient-level retrieval; Study UID for study; Study+Series UIDs for series; Study+Series+SOP Instance UIDs for image. Ambiguous patient-level retrieval spanning source/issuer identity namespaces is rejected; retrieve explicit study UIDs instead. No relational-query extended negotiation is claimed. Outgoing whole-study retrieval first finds series, then queries images with their parent Study+Series UIDs.
@@ -63,7 +63,20 @@ In **Connections → Add connection**, select DIMSE and set its name, host, port
 
 To permit C-MOVE delivery, configure its destination as a DIMSE connection whose **called AE title exactly matches the requested Move Destination**. Exactly one configured peer must match. Unknown or ambiguous AE titles fail; a remote request cannot supply an arbitrary destination host/port. Store sends each original to that configured host/port using C-STORE. No forwarding rule or automatic routing is implied.
 
-For incoming queued retrieval, select the remote peer, search for studies, and choose **Retrieve study**. Store uses C-GET, persists each instance before its C-STORE acknowledgment, and records per-instance job progress in **Activity → Transfers**. The source must return instance and SOP Class UIDs during enumeration and support compatible storage-role negotiation. A peer that only supports C-MOVE retrieval needs a later outbound C-MOVE integration.
+For incoming queued retrieval, select the remote peer, search for studies, and choose **Retrieve study**. With the default C-GET method, Store persists each instance before its C-STORE acknowledgment, and records per-instance job progress in **Activity → Transfers**. The source must return instance and SOP Class UIDs during enumeration and support compatible storage-role negotiation. Choose **Retrieve using → C-MOVE** for a source that needs separate-association delivery. Existing connections keep C-GET unless edited.
+
+## Retrieve with C-MOVE
+
+1. Start this Store’s DIMSE receiver. The Connections page shows its fixed AE title, bind address and TCP port; the move destination cannot be overridden by a job.
+2. Register that **receiving AE** on the remote archive, mapped to an address and port reachable **from that archive**. For two native processes on one machine this is normally `EASISTORE` → `127.0.0.1:4248`. A container’s loopback belongs to that container; use an explicitly configured reachable endpoint for container/network deployments.
+3. Allow this Store’s configured calling AE to query and retrieve on the remote archive. Separately, authorize the remote archive’s calling AE and actual source IP under this Store’s existing DIMSE policy. No trust rule is created automatically.
+4. Edit the remote DIMSE connection and choose **Retrieve using → C-MOVE**. Save, search, and retrieve a small synthetic study. Check **Activity → Transfers** for completed, durably accepted instances. **Test** sends C-ECHO only; it cannot prove the destination mapping, firewall or callback path.
+
+Store enumerates the selected study/series/instance, then issues one **Study Root IMAGE C-MOVE per instance**. This bounded first profile uses the existing per-instance queue and checkpoints; it is not a single whole-study move association or a bulk-throughput claim. C-MOVE control is implemented independently of the separate EASI JS temporary-receiver adapter so that the normal Store receiver owns persistence and acknowledgment.
+
+Callbacks must provide matching Move Originator AE Title/Message ID and the expected SOP Instance/Class UIDs, come from the configured source’s called AE and actual control-connection IP, and pass the receiver’s normal called-AE/calling-AE/IP admission policy. The received study and series are validated before commit. A remote installation that uses a different Storage SCU AE/host, omits originator identifiers, or rewrites hierarchy is outside this initial correlated profile; use C-GET or a separately qualified integration. Existing unrelated C-STORE receiving remains available.
+
+A job completes an item only after a matching durable C-STORE and a valid successful final C-MOVE response. A preexisting catalog object or the remote’s success alone is insufficient. Unknown destinations, missing callbacks, untrusted sources, receiver shutdown, malformed results and persistence failures receive locally authored diagnostic messages. Remote error text is not persisted verbatim. Cancellation does not remove already durable objects; retry targets unfinished items. Late callbacks belonging to closed operations are rejected while their correlation identifiers are retained; restarting a canceled control operation does not revive its checkpoint.
 
 ## Bounds, cancellation, and status
 
