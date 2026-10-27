@@ -55,8 +55,23 @@ C-GET default. Local research remained enabled and anonymous management remained
 401. No test cohort was added to the existing archive. Backup verification used
 a separate catalog copy to leave the protected backup unchanged.
 
-Cross-platform CI is recorded separately for the finalized source. This remains
-a preview, not a stable-v1 declaration.
+The [0.5.0 native portable matrix](https://github.com/davidvaccaro/easi-store/actions/runs/40595549253)
+passed on macOS ARM64, Linux x64 and Windows x64 for source
+`fbf29b4ca052f60d10143831b5913c48c4f9501e`. Each platform passed **222 tests**,
+TypeScript/build/distribution checks, runtime packaging with Node 24.22.1 and
+the complete launcher smoke, including all nine new dataset assertions. The
+[Check/Docker workflow](https://github.com/davidvaccaro/easi-store/actions/runs/40595473218)
+also passed for that source.
+
+Downloaded native candidates were independently verified against GitHub artifact
+digests, inner SHA-256 sidecars, every regular payload inventory entry and all
+65 packaged tracked release inputs, including source, docs and executable Python
+examples. Windows source comparison normalizes line endings. Inventories contain
+5,354 files on macOS/Linux and 2,554 on Windows. Verified packages and synthetic
+receipts remain under ignored `artifacts/native-ci/datasets-fbf29b4/`. No archive
+data or credentials were copied into those artifacts. Later documentation-only
+evidence commits do not change this qualified runtime. Stable-v1 publication and
+production qualification remain separate gates.
 
 ## Automated checks
 
