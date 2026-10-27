@@ -14,6 +14,7 @@ RUN groupadd --gid 10001 easi && useradd --uid 10001 --gid easi --no-create-home
 COPY package.json package-lock.json ./
 RUN npm ci --omit=dev --ignore-scripts --no-audit --no-fund && npm cache clean --force
 COPY --from=build /app/src ./src
+COPY --from=build /app/examples ./examples
 COPY --from=build /app/dist ./dist
 COPY --from=build /app/LICENSE /app/NOTICE ./
 COPY --from=build /app/licenses ./licenses

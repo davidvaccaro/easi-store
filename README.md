@@ -1,10 +1,10 @@
 # EASI Store
 
-**A local-first DICOM archive built with EASI JS, with a modern study library and an embedded EASI View.**
+**A local-first DICOM archive with a modern study library, embedded EASI View, and reproducible research datasets.**
 
 EASI Store is an independent server project in the EASI family. Import DICOM instances, find a patient or examination, browse its series, open an image, and exchange studies with configured DICOMweb or DIMSE archives. Original HTTP/file imports are preserved byte for byte; DIMSE preserves the transmitted dataset and creates Part 10 file metadata. The catalog is stored in SQLite and image objects live on disk.
 
-**Status: 0.4.0 v1 workflow preview.** Query/Retrieve, connected archives, durable transfers, metadata/frames/bulk retrieval, and thumbnails are available. This milestone adds C-MOVE retrieval through the existing durable Store receiver, alongside C-GET. Metadata-first viewing, streamed original-study ZIP exports with SHA-256 manifests, and confirmed study removal remain available. It is not Orthanc feature parity or a production-qualified PACS. [Current status](docs/STATUS.md), [DICOMweb](docs/DICOMWEB.md), and [DIMSE](docs/DIMSE.md) distinguish the implemented profiles from the full standards. [The backlog](docs/BACKLOG.md) records the path to a complete product.
+**Status: 0.5.0 source-available workflow preview.** The Datasets workspace adds saved cross-study series selections, technical review, immutable instance/hash manifests, optional patient-grouped train/validation/test splits, and verified Python downloads. Connected DICOMweb/DIMSE archives, durable transfers including C-GET/C-MOVE, metadata-first viewing, original-study ZIP exports, and confirmed study removal remain available. This is not stable 1.0, Orthanc feature parity, or a clinically/production-qualified PACS. [Current status](docs/STATUS.md), [research datasets](docs/AI_DATASETS.md), [DICOMweb](docs/DICOMWEB.md), and [DIMSE](docs/DIMSE.md) define the implemented profiles; [the backlog](docs/BACKLOG.md) records remaining work.
 
 ## Start with Docker
 
@@ -30,7 +30,7 @@ docker compose start
 
 ## Start from source
 
-Use **Node.js 24** and npm. No external database or cloud account is needed.
+Use **Node.js 24** and npm. No external database, Python installation, machine-learning framework, or cloud account is needed to run Store.
 
 ```sh
 npm ci
@@ -73,6 +73,21 @@ To exchange studies, open **Connections → Add connection**. Choose DICOMweb or
 **Importing into Store transfers files to the Store server.** With the default local deployment that server runs on your own machine; a remote Store receives an upload. This differs from EASI View's standalone local-only file opening. The source files remain where they were; Store saves its own archival copies in its data directory. No cloud upload or analytics is built into this preview.
 
 Archival acceptance and viewer display support are separate. Store can preserve a DICOM object that the current EASI View preview cannot render. Keep original medical data private; use the generated demo when evaluating or reporting a bug.
+
+## Build a reproducible research dataset
+
+1. Open **Datasets → New dataset** and name its research purpose. **Try a synthetic cohort** creates six generated subjects, two studies per subject, and 36 images so you can explore the complete workflow without patient files.
+2. **Choose series** across studies. Save the selection and optional organizational labels/review notes; these are dataset records, not clinical annotations, segmentation masks, or verified training labels.
+3. Review subject, study, series, instance, and byte counts. Expand technical checks for indexed dimensions, frame counts, object roles, encodings, and reported limitations. Open representative series in **EASI View** for visual review. Indexed metadata does not establish image quality or suitability for a particular experiment.
+4. **Freeze version** to record exact instance membership, encoded byte sizes, and SHA-256 hashes. Optionally choose an explicit seed and train/validation/test ratios. A source-scoped subject stays in one partition; cross-source identity matching is not established, and small-cohort proportions are approximate.
+5. In **Frozen versions**, download the manifest or **Verify availability & hashes**. Later imports do not enter an existing version. Archive removal still applies: snapshots do not retain or copy originals, and missing/changed objects are reported rather than replaced by a current series selection.
+6. Download the Python consumer and copy the version-specific command shown in **Run a verified download**. It includes the dataset ID, version, and exact manifest hash. Supply an authorized token through `EASI_STORE_TOKEN`, separately from the manifest and command. The consumer streams bounded concurrent downloads, verifies originals, supports restart/resume with re-verification, and writes an integrity report and datalist.
+
+The downloader needs **Python 3.9+ and its standard library**. It is an optional client; Store startup and normal browsing do not require Python or ML packages. Dataset routes require authorization even in the local-research access profile.
+
+**A manifest is not anonymization.** DICOM originals retain identifiers and may contain identifying pixels or text. Review permissions and deidentification before downloading or sharing files or manifests. Removing a dataset definition deletes its notes and version history, while keeping original DICOM instances in the archive.
+
+The optional [MONAI example](examples/datasets/monai_example.py) provides a separately qualified native Little Endian MONOCHROME2 2D/multiframe CPU input path; it does not stack a series into a spatial volume, convert SEG to masks, validate image/label alignment, train a model, or perform AI inference. See the [dataset workflow and limits](docs/AI_DATASETS.md) and [download/ML examples](examples/datasets/README.md) for exact dependencies and supported representations.
 
 ## Connect applications
 
@@ -119,11 +134,11 @@ node --test scripts/package-portable.test.mjs
 npm run artifact:pack -- --bundle-runtime
 ```
 
-Tests generate independent synthetic DICOM bytes. They do not require a private corpus, Orthanc installation, AWS credentials, or patient files. [Validation](docs/VALIDATION.md) records additional browser, container, and independent interoperability checks. Release artifacts include the application, EASI JS/EASI View dependencies and their notices, a file inventory, and a SHA-256 checksum. [Operations](docs/OPERATIONS.md) covers storage, shutdown, recovery, and backup precautions.
+Development uses Node.js 24; the full dataset consumer test suite also needs Python 3.9+. Tests generate independent synthetic DICOM bytes and do not require a private corpus, Orthanc installation, AWS credentials, or patient files. Optional MONAI qualification installs its own Python ML dependencies separately; those packages are not Store runtime dependencies. [Validation](docs/VALIDATION.md) records additional browser, container, and independent interoperability checks. Release artifacts include the application, EASI JS/EASI View dependencies and their notices, a file inventory, and a SHA-256 checksum. [Operations](docs/OPERATIONS.md) covers storage, shutdown, recovery, and backup precautions.
 
 ## Roadmap
 
-The 0.4.0 milestone adds queued C-MOVE retrieval to the initial large-study viewing, original ZIP export, and confirmed storage-cleanup workflows. Stable v1 preparation now focuses on exact-candidate recovery/backup/upgrade and resource qualification, independent interoperability, installation, and operational documentation. The proposed next product feature is [Dataset Snapshot Export](docs/AI_DATASETS.md): reproducible, hash-verified selections for research and AI workflows. Broad collections, tag editing/anonymization, routing, and migration remain demand-led work; standards expansion continues separately. PostgreSQL, S3-compatible storage, worklists, Storage Commitment, XML/rendered DICOMweb, and signed installers remain explicit planned work. They are not silently enabled by a configuration flag. The full [phased backlog](docs/BACKLOG.md) defines the release gates.
+The 0.5.0 preview implements the first [research dataset workflow](docs/AI_DATASETS.md): curate series, review technical inventory, freeze exact membership, optionally partition source-scoped subjects, and retrieve verified originals. Stable v1 preparation still requires exact-candidate recovery/backup/upgrade, resource qualification, broader independent interoperability, installation, and operational evidence. Organizational dataset metadata and verified consumer/ML examples do not establish a complete training platform. General tag correction, built-in anonymization, routing, worklists, Storage Commitment, PostgreSQL/S3 adapters, XML/rendered DICOMweb, and signed installers remain explicit future work. The [phased backlog](docs/BACKLOG.md) defines those boundaries and release gates.
 
 ## License
 

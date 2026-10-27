@@ -2,6 +2,62 @@
 
 Validation uses independently generated DICOM fixtures. Original imaging collections are not part of the source, build, test suite, or artifacts.
 
+## Research datasets — 0.5.0 preview, 2026-10-27
+
+The integrated candidate passed **222 synthetic tests**, source guards,
+TypeScript, the production UI build and all 61 distribution hashes on macOS
+ARM64 with Node 24.22.1. Dataset coverage includes revision/confirmation guards,
+immutable membership and manifest hashes, identity-scoped subject grouping,
+explicit deterministic partitions, technical metadata review, bounded streaming,
+missing/replaced/corrupt originals, shutdown/cancellation, authenticated access,
+and full CLI backup/restore of definitions, versions and original bytes.
+
+Ten independent Python-consumer tests exercise the actual authenticated HTTP
+service, pinned manifests, original hashes, interrupted downloads, verified resume,
+missing/corrupt originals, redirects, unsafe paths and cross-partition rejection.
+Disposable Chrome passed **13 workflow checks**, including six-subject selection,
+embedded image display, explicit freezing, manifest download, hash verification,
+new imports leaving v1 unchanged, executing the displayed pinned-v1 command after
+v2 exists, metadata-only removal, the one-click generated cohort and a 390 px
+layout. No runtime exceptions or console errors occurred.
+
+A real, isolated Linux ARM64 MONAI test used Python 3.12.16, MONAI 1.6.1,
+CPU PyTorch 2.8.0, NumPy 2.2.6 and pydicom 3.0.1. Authenticated Store download,
+the independent Python consumer, `load_decathlon_datalist`, `Dataset`,
+`PydicomReader` and channel-first tensor loading succeeded. All decoded/rescaled
+pixels matched independent expected values for native monochrome 2D
+`[1, 8, 12]` and three-frame `[1, 3, 6, 10]` CPU tensors. Reader execution had
+network access disabled. This qualifies that example profile, not compressed
+codecs, spatial volume assembly, SEG masks, model training or clinical use.
+
+The Linux ARM64 Docker image passed **221 full-suite tests plus the final
+backup/restore test separately**, followed by nine production-runtime workflow
+groups. These covered nonroot UID 10001, read-only root, a private volume, no
+runtime Python, exact frozen manifest/original hashes, protected routes, the
+actual served Python downloader and verified resume, two restart cycles and
+metadata-only dataset removal retaining originals. All 109 runtime payload files
+matched the frozen source. Image ID:
+`sha256:60720b90d524e6f96e94d1134efc60691e78996523858eba611cae5c49f6f7f9`.
+Disposable containers, networks and volumes were removed.
+
+The macOS ARM64 portable bundle passed all **5,354 inventory files** and the
+expanded launcher smoke with bundled Node 24.22.1 and no system Node on PATH.
+In addition to existing archive/protocol/transfer checks, the smoke covered
+dataset selection/readiness, immutable manifests, exact frozen originals,
+hash availability, authenticated management/downloads, the packaged consumer,
+missing originals and restart persistence. Artifact SHA-256:
+`b8903a9c37b0a2a7ca77bcc155a30777fcc6c8e6ee9c37f488d0c9528dbedd53`.
+Before updating the local archive, the prior 0.4.0 runtime made a fresh protected
+offline backup. All 2,998 backup entries and all 2,992 original object hashes
+verified. The 0.5.0 startup retained one patient, two studies, 20 series,
+1,596,352,936 bytes, catalog schema 2, both configured connections and their
+C-GET default. Local research remained enabled and anonymous management remained
+401. No test cohort was added to the existing archive. Backup verification used
+a separate catalog copy to leave the protected backup unchanged.
+
+Cross-platform CI is recorded separately for the finalized source. This remains
+a preview, not a stable-v1 declaration.
+
 ## Automated checks
 
 `npm run check` validates source assets, synthetic archive/protocol/authentication/backup cases, portable argument/checksum handling, TypeScript, production UI build, and distribution hashes. Tests exercise actual local HTTP and DIMSE sockets; environments must permit loopback listeners.

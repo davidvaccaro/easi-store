@@ -19,6 +19,9 @@ jobs:
       - name: Actual platform
         id: platform
         run: node -e "require('fs').appendFileSync(process.env.GITHUB_OUTPUT, 'name='+process.platform+'-'+process.arch+'\n')"
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
       - run: npm ci --no-audit --no-fund
       - run: npm run check
       - run: npm run artifact:pack -- --bundle-runtime --node-version 24.22.1

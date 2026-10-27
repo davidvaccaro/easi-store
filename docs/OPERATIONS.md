@@ -136,7 +136,7 @@ Choose **Remove study**, review counts/bytes, and type **DELETE** to remove Stor
 
 A committed removal with incomplete reclamation is reported explicitly. Restart Store to run recovery; do not manually delete its journal or restore individual object/catalog files. If recovery reports integrity/journal conflicts, retain the whole directory for repair. The v1 removal gate is conservative across archive readers; live-client traffic may require a quiet maintenance window.
 
-0.3.0 introduces catalog schema 2. Before its first start on an existing archive, stop Store and use the old build's offline `backup` command. Original bytes are not rewritten by migration. Keep that backup and old runtime. An older build refuses schema 2; rollback restores the pre-upgrade backup to a new directory. Current restore accepts verified 0.1.0, 0.2.0, 0.2.1, 0.3.0, and 0.4.0 backup manifests. An original-study ZIP does not include catalog/security/peer/job state and cannot serve as this rollback backup.
+0.3.0 introduces catalog schema 2. Before its first start on an existing archive, stop Store and use the old build's offline `backup` command. Original bytes are not rewritten by migration. Keep that backup and old runtime. An older build refuses schema 2; rollback restores the pre-upgrade backup to a new directory. Current restore accepts verified 0.1.0, 0.2.0, 0.2.1, 0.3.0, 0.4.0, and 0.5.0 backup manifests. An original-study ZIP does not include catalog/security/peer/job state and cannot serve as this rollback backup.
 
 ## C-MOVE receiving setup (0.4.0)
 
@@ -145,3 +145,13 @@ DIMSE connections retain C-GET unless `retrievalMethod` is explicitly set to `c-
 CLI startup attaches the receiver before resuming persisted jobs. With DIMSE disabled, ordinary HTTP/C-GET jobs can run, but C-MOVE jobs fail with receiver guidance. Already accepted originals remain after cancellation; unfinished instances can be retried once callback configuration is fixed. The source must send matching originator fields from its configured AE and control-connection address. Multi-host callback routing needs a separately qualified integration.
 
 0.4.0 retains catalog schema 2 and does not rewrite existing originals. Take a verified offline backup before updating. C-MOVE correlation allocation is retained in the archive to avoid immediate identifier reuse after restart; this is operational state, not a user-configurable move destination.
+
+## Research datasets (0.5.0)
+
+Dataset definitions, versioned manifests, subject references and frozen member records live in the same catalog/full-backup boundary as originals and configured peers. Stop Store and take an offline verified backup before upgrading. 0.5.0 retains schema2 and original bytes; restore a prior backup to a new directory for rollback rather than running an older build against changed application state.
+
+The [Datasets guide](AI_DATASETS.md) explains selection, explicit splits, privacy preparation, token use and verified downloads. Store itself has no Python or ML runtime dependency. Developer tests and the independent downloader require Python3.9+; optional MONAI dependencies install in a separate research environment.
+
+A frozen version does not pin originals. Preserve the archive/full backup or a verified downloaded copy for experiment retention. Study removal makes affected members unavailable; dataset removal purges metadata/history while retaining originals. Use the typed dataset removal action to reclaim unused snapshot metadata capacity. Do not edit SQLite or hash-addressed object paths by hand.
+
+Strong availability checks read full encoded originals sequentially and can be canceled. Original downloads and manifest responses have separate concurrency caps; the client defaults to four workers. Authentication stays required for dataset management even when local DICOMweb clients have the research exemption. Generated demo originals are clearly labeled synthetic and are imported only through an explicit administrator action.

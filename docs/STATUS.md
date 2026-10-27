@@ -1,4 +1,4 @@
-# EASI Store status — 0.4.0
+# EASI Store status — 0.5.0
 
 **V1 workflow preview.** EASI Store is a working, independent, single-host archive. It is source available under the Community License; it is not a claim of full DICOM conformance, Orthanc parity, or production/clinical qualification.
 
@@ -6,6 +6,8 @@
 | --- | --- |
 | Archive | Bounded disk-backed imports, SHA-256 integrity, explicit duplicate/conflict outcomes, crash recovery, SQLite single-writer protection, offline backup/restore |
 | Library | Patient/study/series/instance browsing, search, lazy management thumbnails, metadata-first/on-demand series viewing through the published EASI View SDK |
+| Research datasets | Saved cross-study series selections, organizational labels/review notes, indexed technical checks, immutable version/hash manifests, explicit subject-grouped splits, availability checks, metadata-only removal, synthetic cohort |
+| Training data access | Authenticated bounded Python downloader with integrity/resume/reporting; optional pinned MONAI native 2D/multiframe CPU loading example |
 | Study management | Streamed ZIP/ZIP64 original export with SHA-256 manifest; preview/revision/typed confirmation for removal, auditable counts and interrupted-removal recovery |
 | DICOMweb | Indexed QIDO hierarchy; binary Part 10 STOW; original WADO; nested JSON metadata; supported native/original-compressed frame and referenced-bulk retrieval |
 | DIMSE server | Verification / Storage, Study Root and Patient Root FIND / GET / configured-destination MOVE, pending/final statuses, cancellation, durable receiving |
@@ -23,6 +25,8 @@ HTTP/file imports preserve their original Part 10 bytes. DIMSE transmits dataset
 
 ## Next work
 
-The 0.4.0 milestone adds connection-selectable C-MOVE retrieval into the existing durable receiver; the bounded callback profile is documented in [DIMSE.md](DIMSE.md). The everyday study workflows are described in [STUDY_MANAGEMENT.md](STUDY_MANAGEMENT.md). The next release step is qualification of the exact candidate: resource/cancellation limits, backup/restore/upgrade, independent protocol clients, operational guidance, and clean installations. Schema 2 requires a full pre-upgrade backup; rollback uses that backup rather than an older runtime on the upgraded catalog. The proposed next feature is [Dataset Snapshot Export](AI_DATASETS.md), a narrow reproducibility workflow for research and AI consumers. Broad collections/labels, DICOMDIR export, controlled anonymization, routing, and migration remain demand-led Phase 3 work. Protocol qualification and standards expansion continue alongside that work. Whole-instance transcoding, XML metadata/STOW, standard rendered resources, WADO-URI, UPS/workitems, worklists, MPPS, Storage Commitment, DICOM TLS, PostgreSQL/S3, OIDC/RBAC, automatic routing, and signed installers remain planned.
+The 0.5.0 milestone implements the [AI dataset workflow](AI_DATASETS.md): a saved selection, immutable exact-membership versions, optional subject-grouped splits, technical inventory, verified Python downloads and a narrow qualified MONAI loading example. It includes the minimum research-facing labels/bulk selection/programmatic access from Phase 3. General tag correction, in-house anonymization, routing and broad migration remain demand-led.
 
-Stable 1.0 still requires the release gates in [BACKLOG.md](BACKLOG.md), including qualification of the exact candidate. Historical 0.1.0–0.2.1 results do not certify a changed 0.4.0 artifact. [VALIDATION.md](VALIDATION.md) separates baseline evidence from checks of the current candidate.
+V1 preparation now focuses on exact-candidate qualification, reproducible installation, backup/restore and operational guidance for this single-host research profile. Dataset metadata shares catalog schema 2; original objects are not rewritten. Take a full pre-upgrade backup and restore that backup for rollback instead of opening new state with an older runtime. Full-standard expansion continues separately; PostgreSQL/S3, external identity/RBAC, DICOM TLS, worklists and signed installers remain planned.
+
+Stable 1.0 still requires the release gates in [BACKLOG.md](BACKLOG.md), including qualification of the exact candidate. Historical 0.1.0–0.2.1 results do not certify a changed 0.5.0 artifact. [VALIDATION.md](VALIDATION.md) separates baseline evidence from checks of the current candidate.

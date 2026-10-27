@@ -16,6 +16,8 @@ import { ConnectionService, handleConnectionRoutes } from './connections/Connect
 import { ThumbnailService } from './thumbnails/ThumbnailService.js';
 import { VERSION } from './version.js';
 import { MoveCoordinator } from './dimse/MoveCoordinator.js';
+import { DatasetService } from './datasets/DatasetService.js';
+import { DatasetRoutes } from './datasets/router.js';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 const mime = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8',
@@ -33,6 +35,9 @@ export const CAPABILITIES = {
     viewer: { name: 'EASI View', version: '1.0.0-rc.1', releaseCandidate: true, loading: 'Metadata-first DICOMweb; requested originals loaded on demand' },
     management: { originalStudyExport: 'Streaming ZIP/ZIP64 with SHA-256 manifest',
         studyRemoval: { previewRequired: true, confirmation: 'DELETE', scope: 'Store archival copies only' } },
+    datasets: { savedSelections: true, immutableVersions: true, sha256Membership: true,
+        optionalSubjectGroupedSplits: true, indexedTechnicalChecks: true, verifiedPythonDownloads: true,
+        anonymization: false, annotationInterpretation: false, modelTraining: false },
     dimse: { enabled: false, roles: ['C-ECHO SCP/SCU', 'C-STORE SCP/SCU', 'C-FIND SCP/SCU', 'C-GET SCP/SCU', 'C-MOVE SCP/SCU'],
         queryRetrieve: ['Study Root', 'Patient Root'], moveDestinations: 'Explicitly configured peers only',
         retrievalMethods: ['c-get', 'c-move'], moveRetrieval: 'Enumerated IMAGE requests into the existing Store receiver; same-peer callbacks only', tls: false },
@@ -51,13 +56,15 @@ export async function createStoreServer(options) {
     let accessPolicy;
     try { accessPolicy = await new AccessPolicy({ dataDir, host, dimseHost }).open({ profile: accessProfile, dimse: dimsePolicy }); }
     catch (error) { await archive.close(); throw error; }
-    let connections, moveCoordinator;
+    let connections, moveCoordinator, datasets;
     try {
         moveCoordinator = new MoveCoordinator({ archive });
+        datasets = new DatasetService({ archive });
         connections = await ConnectionService.open({ archive, credentials, moveCoordinator, autoStartJobs });
     } catch (error) { await moveCoordinator?.close(); await archive.close(); throw error; }
     const thumbnails = new ThumbnailService();
     const studyExports = createStudyExportService();
+    const datasetRoutes = new DatasetRoutes({ service: datasets });
     const activeReaders = new Set();
     let activeUploads = 0, closing = false;
     const capabilities = structuredClone(CAPABILITIES);
@@ -111,10 +118,12 @@ export async function createStoreServer(options) {
             }
             // A read lease lasts through streaming/worker completion, so an
             // administrator cannot remove originals from an active reader.
-            if ((method === 'GET' || method === 'HEAD') && (dicomwebPath || p.startsWith('/api/v1/download/') || /\/thumbnail$/.test(p))) {
+            if ((method === 'GET' || method === 'HEAD') && (dicomwebPath || p.startsWith('/api/v1/download/') || /\/thumbnail$/.test(p)
+                || p.startsWith('/api/v1/datasets/') && /\/original$/.test(p))) {
                 releaseRead = archive.acquireReadLease();
                 activeReaders.add(res);
             }
+            if (await datasetRoutes.handle(req, res, p)) return;
             const studyExport = p.match(/^\/api\/v1\/studies\/([0-9.]+)\/export$/);
             if (studyExport && method === 'GET') {
                 await studyExports.export(req, res, archive, studyExport[1]); return;
@@ -215,13 +224,14 @@ export async function createStoreServer(options) {
         } finally { activeReaders.delete(res); releaseRead?.(); }
     });
     server.on('clientError', (_error, socket) => socket.end('HTTP/1.1 400 Bad Request\r\nConnection: close\r\n\r\n'));
-    return { server, archive, auth, capabilities, connections, accessPolicy, studyExports, moveCoordinator,
+    return { server, archive, auth, capabilities, connections, accessPolicy, studyExports, moveCoordinator, datasets,
         async listen() {
             await new Promise((resolve, reject) => { server.once('error', reject); server.listen(port, host, () => { server.off('error', reject); resolve(); }); });
             return server.address();
         },
         async close() {
             closing = true;
+            datasetRoutes.close();
             // Record queue shutdown intent before the receiver aborts a move,
             // so unfinished jobs remain resumable instead of becoming failed.
             await connections.close();

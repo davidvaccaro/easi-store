@@ -41,22 +41,25 @@ EASI JS's existing DIMSE client/receiver support does not automatically provide 
 
 ## Phase 3 — research and data management
 
-Prioritize documented research workflows rather than a feature-for-feature Orthanc checklist. The proposed next feature is a **dataset snapshot export**: select and review series, freeze exact instance/hash membership, and consume that manifest through bounded, verified downloads. It is not implemented. [AI dataset workflows](AI_DATASETS.md) records the evidence, narrow scope, and limitations; the sources demonstrate workflow fit, not measured market demand.
+**Implemented minimum in the 0.5.0 source-available preview:**
 
-- Keep independent client compatibility, recovery, and resource qualification as release gates. A protocol route or a successful file import alone does not qualify a training or annotation integration.
-- Start cohort work with selections and reproducible manifests. Persistent collections/labels and richer bulk actions can follow demonstrated usage; organizational labels are distinct from training annotations.
-- Prioritize an explicit programmatic retrieval example before a general routing engine or broad migration tooling.
-- Defer arbitrary tag editing and general anonymization until a concrete workflow justifies their qualification. Any deidentified derivative must preserve original objects and maintain UID/reference consistency and provenance.
+- **Selection and reproducibility:** the Datasets workspace saves explicit series selections across studies, supports visual review in EASI View and indexed technical inventory, and freezes exact instance/hash/size membership into immutable version manifests. Optional seeded train/validation/test assignments keep archived source-scoped subjects together; the user must explicitly choose partitioning.
+- **Organizational labels and management:** dataset-level labels and review notes persist separately from original DICOM attributes and portable manifests. Typed dataset removal purges only the definition and version history; archived originals remain. These fields are not segmentation masks, validated training labels, or clinical annotations.
+- **Deidentification boundary:** document a reviewed external derivative workflow with integrity/provenance checks. Store preserves originals; its manifests, opaque subject keys, organizational labels, and downloads do not anonymize data. Built-in tag correction and anonymization remain deferred.
+- **Programmatic retrieval:** a bounded, authenticated Python consumer retrieves a selected frozen version, pins its manifest hash, verifies original bytes, resumes by rechecking completed files, and reports missing/changed objects. This is an explicit consumer workflow, not automatic routing or broad archive migration.
+- **Independent ML/client gate:** generated-data qualification covers the Python download path and an optional MONAI native Little Endian MONOCHROME2 2D/multiframe CPU recipe. A successful import or protocol route is not training-readiness proof; wider codecs, modalities, geometry, series-to-volume assembly, and annotation alignment need separate qualification. Keep independent client, recovery, and resource tests as release gates for each candidate.
+- **Safe evaluation:** a generated six-subject/twelve-study cohort demonstrates selection, patient grouping, versioning, and verified downloads without a private image collection.
 
-The broader Phase 3 target remains:
+[AI dataset workflows](AI_DATASETS.md) describes the actual implementation and its limits. These minimums establish reproducible inputs, not a complete data curation, annotation, or training platform. Stable v1 still depends on the operational and interoperability gates below.
 
-- Collections and labels that reference archived instances without duplicating them.
-- Safe import from folders/media/DICOMDIR and resumable bulk import manifests.
-- Original study ZIP/ZIP64 with integrity manifests is implemented in 0.3.0. DICOMDIR/media exports, richer selections, resumable delivery, and collections remain planned.
-- Anonymization profiles based on PS3.15 Annex E, UID/reference consistency, dates, private attributes, and provenance. Burned-in text, documents, graphics, and pixel content need explicit handling; deleting a few tags is not complete anonymization.
-- Conflict/alternate-representation review, protected studies, quotas, retention, and auditable destructive actions.
-- Routing rules and subscriptions/webhooks with durable retry semantics.
-- Orthanc migration through documented API/protocol export, resumable manifests, counts and original-byte verification. Never reinterpret or edit a live Orthanc database/blob directory.
+**Continuing Phase 3 work:**
+
+- Richer collection/bulk-review workflows, protected datasets/studies, quotas, retention, and auditable management when concrete usage justifies them.
+- Folder/media/DICOMDIR import and resumable bulk-import manifests; broader DICOMDIR/media export remains planned. Original study ZIP/ZIP64 export is implemented separately.
+- General tag correction and PS3.15 Annex E deidentification profiles, including UID/reference consistency, dates, private attributes, and derivative provenance. Pixels, burned-in text, recognizable features, documents, and graphics require explicit handling; a few removed tags do not establish anonymization.
+- Conflict/alternate-representation review, cross-source subject reconciliation with evidence, annotation references, versioned label relationships, SEG-to-mask conversion, and validated image/label alignment.
+- Routing rules, subscriptions/webhooks, scheduling, and durable retry policies; these are not enabled by the dataset consumer.
+- Orthanc migration through documented API/protocol export, resumable manifests, counts, and original-byte verification. Never reinterpret or edit a live Orthanc database/blob directory.
 
 ## Phase 4 — broader normative DICOMweb
 

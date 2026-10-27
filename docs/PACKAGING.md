@@ -21,12 +21,12 @@ Compose publishes HTTP on **127.0.0.1:8048**, uses a persistent named volume, ru
 To build without Compose:
 
 ```sh
-docker build --tag easi-store:0.4.0-preview .
+docker build --tag easi-store:0.5.0-preview .
 docker volume create easi-store-archive
 docker run --rm --init --name easi-store \
   --publish 127.0.0.1:8048:8048 \
   --mount source=easi-store-archive,target=/data \
-  easi-store:0.4.0-preview
+  easi-store:0.5.0-preview
 ```
 
 This builds an image locally. No Docker Hub/GHCR image publication is implied. The image recipe follows the Node 24 base image; a qualified release should additionally record the resolved base-image digest and scan the image it actually publishes.
@@ -60,7 +60,7 @@ npm run artifact:pack -- --bundle-runtime \
   --output /absolute/path/to/release-artifacts
 ```
 
-Recognized targets are `darwin-arm64`, `darwin-x64`, `linux-arm64`, `linux-x64`, `win32-arm64`, and `win32-x64`. Recognition means the packager knows the official Node distribution name; it is not evidence that Store has passed native tests on all six targets. The historical **0.1.0** [native macOS, Windows, and Linux matrix passed](https://github.com/davidvaccaro/easi-store/actions/runs/40103493426) on 2026-10-24, including its 27-test suite and actual runtime-bundled launcher smoke checks. Local macOS ARM64 baseline packaging also passed. Those results do not certify a changed 0.4.0 package. See [candidate-specific validation evidence](VALIDATION.md), and review the exact run and actual CPU architecture before publishing a candidate.
+Recognized targets are `darwin-arm64`, `darwin-x64`, `linux-arm64`, `linux-x64`, `win32-arm64`, and `win32-x64`. Recognition means the packager knows the official Node distribution name; it is not evidence that Store has passed native tests on all six targets. The historical **0.1.0** [native macOS, Windows, and Linux matrix passed](https://github.com/davidvaccaro/easi-store/actions/runs/40103493426) on 2026-10-24, including its 27-test suite and actual runtime-bundled launcher smoke checks. Local macOS ARM64 baseline packaging also passed. Those results do not certify a changed 0.5.0 package. See [candidate-specific validation evidence](VALIDATION.md), and review the exact run and actual CPU architecture before publishing a candidate.
 
 The packager:
 
@@ -121,3 +121,9 @@ also passed. Local macOS ARM64 packaging and Linux ARM64 container qualification
 are recorded in [VALIDATION.md](VALIDATION.md), together with independent Orthanc
 C-MOVE evidence. These are unsigned preview candidates, not a public release or
 a claim of universal PACS/deployment compatibility.
+
+## Dataset client files (0.5.0)
+
+Portable artifacts and the Docker runtime include `examples/datasets`: the authenticated download route serves that exact packaged Python script. They do not install Python, MONAI, PyTorch or a GPU runtime. The core application still launches with bundled Node alone; researchers install the optional client/framework environment separately. Python cache/virtual-environment files are excluded from portable inputs.
+
+The portable smoke now checks dataset creation/readiness, immutable manifest/header hashes, exact snapshot originals, protected tool access, availability after original removal and restart persistence. The full source check uses Python3.9+ for the independent client tests; native CI explicitly selects Python3.12. Qualified platform/candidate evidence is recorded in [VALIDATION.md](VALIDATION.md).

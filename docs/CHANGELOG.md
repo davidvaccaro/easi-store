@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.5.0 — Reproducible research datasets preview
+
+- Add a Datasets workspace for named cross-study series selections, dataset-level organizational labels/review notes, indexed technical readiness, and visual review in the independent EASI View.
+- Freeze immutable version manifests with exact original instance membership, SHA-256/byte sizes, provenance, and optional explicit seeded subject-grouped train/validation/test splits. Later imports do not change frozen membership; snapshots do not pin originals against removal.
+- Add availability/hash checks, manifest downloads, version-specific Python consumer commands, and bounded resumable downloads that verify originals before producing a report/datalist. Credentials stay separate from manifests.
+- Add a generated six-subject/twelve-study/36-image cohort and confirmed metadata-only dataset removal. Removing a definition/version history does not remove archived DICOM originals.
+- Provide an optional MONAI CPU example qualified for generated native Little Endian MONOCHROME2 2D and multiframe inputs. Spatial series stacking, SEG-to-mask conversion, annotation validation, model training/inference, and anonymization remain outside this profile.
+- Keep Node 24 as the Store runtime. Python 3.9+ is needed for the optional consumer and its tests; ML dependencies are separate. This remains a source-available preview, not stable 1.0 or clinical qualification.
+
 ## 0.4.0 — Correlated C-MOVE retrieval preview
 
 - Add per-DIMSE-connection C-MOVE retrieval alongside the default C-GET method, using the existing Store receiving AE and persistent instance queue.

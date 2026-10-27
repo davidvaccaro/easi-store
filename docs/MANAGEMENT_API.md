@@ -1,4 +1,4 @@
-# Management API preview — 0.4.0
+# Management API preview — 0.5.0
 
 These endpoints belong to EASI Store, separately from `/dicomweb`. They power the browser interface and are versioned under `/api/v1`. Management archive reads and writes require a signed-in session or Bearer token in both client access profiles. The explicit public discovery/bootstrap routes are listed below. This first preview has a single administrator role; granular roles are a later milestone.
 
@@ -110,3 +110,30 @@ Export is an authenticated `GET`, including in research mode. It returns `applic
 Removal requires a fresh authenticated preview and exact `{ "confirmation": "DELETE", "revision": "PREVIEW_SHA256" }`; cookie writes retain normal origin/header checks. `409` indicates a changed preview or active archive read/import/target transfer. Refresh and review a changed preview before retrying; do not silently reuse confirmation. Successful `200` includes `deleted:true`, counts, and `reclaimedBytes`. `202` with `reclamationPending:true` means catalog deletion committed but reclamation needs restart/recovery; it does **not** mean the study is intact or cancellation remains possible. Further archive data operations fail closed pending recovery. `503` can indicate recovery-required or shutdown.
 
 Study removal is irreversible without a full backup. Source folders, previous exports, backups, and remote peer archives are not altered. No filesystem path is accepted from the client. [Study management](STUDY_MANAGEMENT.md) documents user behavior, integrity, and upgrade boundaries.
+
+## Research datasets
+
+All dataset, manifest, member and tool endpoints require management authentication in both access profiles. Writes use the normal origin and `X-EASI-Store` rules. Dataset/version identifiers are server-generated; requests never supply an object path or remote destination.
+
+| Method | Path after `/api/v1` | Result |
+| --- | --- | --- |
+| GET / POST | `/datasets` | List bounded saved definitions / create a draft (`201`) |
+| POST | `/datasets/demo` | `{}`; durably import36 generated originals and create a six-subject research dataset (`201`) |
+| GET / PUT | `/datasets/{id}` | Definition and version summaries / revision-checked update |
+| DELETE | `/datasets/{id}` | `{revision,confirmation:"DELETE DATASET"}`; remove dataset metadata/history, retain all originals |
+| GET | `/datasets/{id}/readiness` | Indexed technical inventory, counts and explicit limitations |
+| POST | `/datasets/{id}/versions` | `{revision,split?}`; freeze immutable membership (`201`) |
+| GET | `/datasets/{id}/versions/{version}/manifest` | Exact JSON attachment; `X-EASI-Manifest-SHA256` and ETag identify its stored UTF-8 bytes |
+| POST | `/datasets/{id}/versions/{version}/availability` | `{verifyHashes?:boolean}`; per-member status and counts; defaults to catalog/file/size checks |
+| GET | `/datasets/{id}/versions/{version}/members/{memberId}/original` | Exact frozen original; encoded size/SHA256 verified while streaming |
+| GET | `/dataset-tools/download_dataset.py` | The packaged Python standard-library consumer attachment |
+
+Create accepts `{name,description?,labels?,reviewNotes?,selection?:[{studyUid,seriesUid}]}`. An empty draft is allowed; freezing an empty selection is rejected. PUT accepts a current `revision` and changed fields from that same list. Unknown fields, invalid identifiers, duplicate selections, excess limits and stale revisions are rejected. Labels/review notes are organizational metadata, not image annotations.
+
+The optional split is `{seed:"EXPERIMENT-SEED",ratios:{train:0.7,validation:0.15,test:0.15}}`. Fractions sum to1 and at least two must be positive. Splitting is opt-in, deterministic for saved subject groups and approximate in count. Known groups never span partitions; unknown/cross-source identity remains an explicit limitation. A freeze returns its numeric `version`, UUID `snapshotId`, exact `manifestSha256`, counts and actual subject partition counts.
+
+Manifest schema1 has `kind:"easi-store-dataset"`, dataset/version/snapshot/time/Store identifiers, summary, optional split, limitations, fixed technical notices and `members`. Each member has a UUID, opaque subject/source references, identity grouping basis, UID hierarchy/SOP class/syntax, role, indexed dimensions/frame count, encoded bytes/SHA256, partition and fixed `originalPath`. Raw patient names/MRNs, source URLs, filesystem paths, organizational labels and review notes are omitted. Opaque references/UIDs do not imply deidentification.
+
+Availability statuses are `available`, `missing`, `changed`, `unreadable`. Only `verifyHashes:true` verifies bytes. The response remains a point-in-time result, not a retention reservation. Original routes return410 for removed objects and409 for replaced catalog members; they do not substitute a new object under an old UID. Corrupt originals abort streaming. Consumers must verify completion, encoded size and digest before using a file. The exact manifest remains unchanged after archive edits/removal until its dataset definition is explicitly purged.
+
+See [AI_DATASETS.md](AI_DATASETS.md) for limits, token setup, download/research examples and the declared profile. Strong verification supports request cancellation; server shutdown aborts active checks and streaming original readers before closing the archive.

@@ -15,3 +15,8 @@ data/
 coverage/
 *.log
 IMPLEMENTATION_CONTRACT.md
+
+# Optional research examples may run in private Python environments.
+__pycache__/
+*.py[cod]
+.venv*/

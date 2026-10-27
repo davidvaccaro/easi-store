@@ -95,6 +95,49 @@ async function phase2Dicomweb(base, cookie, sample) {
   await singlePart(response, `/easi-store${resource}/frames/2`);
 }
 
+async function datasetPost(base, cookie, suffix, body) {
+  return fetch(`${base}/api/v1/datasets${suffix}`, { method:'POST', headers:{'Content-Type':'application/json','X-EASI-Store':'1',...(cookie ? {Cookie:cookie} : {})},body:JSON.stringify(body) });
+}
+async function datasetSmoke(base, cookie, sample, original, bundle) {
+  const headers = {Cookie:cookie};
+  const dataset = await checkedJson(await datasetPost(base,cookie,'',{name:'Portable frozen synthetic cohort',selection:[{studyUid:sample.studyUid,seriesUid:sample.seriesUid}]}),201);
+  const readiness = await checkedJson(await fetch(`${base}/api/v1/datasets/${dataset.id}/readiness`,{headers}));
+  if (dataset.selection.length !== 1 || readiness.summary.subjects !== 1 || readiness.summary.studies !== 1 || readiness.summary.series !== 1 || readiness.summary.instances !== 1 || readiness.summary.bytes !== original.length || readiness.series[0]?.frames !== sample.frames) throw new Error('Portable dataset readiness did not describe the explicit synthetic selection.');
+  const version = await checkedJson(await datasetPost(base,cookie,`/${dataset.id}/versions`,{revision:dataset.revision}),201);
+  const response = await fetch(`${base}/api/v1/datasets/${dataset.id}/versions/${version.version}/manifest`,{headers});
+  if (response.status !== 200) throw new Error(`Portable dataset manifest failed: ${response.status}.`);
+  const bytes = Buffer.from(await response.arrayBuffer()), sha256 = createHash('sha256').update(bytes).digest('hex'), manifest = JSON.parse(bytes);
+  if (version.version !== 1 || version.manifestSha256 !== sha256 || response.headers.get('x-easi-manifest-sha256') !== sha256 || manifest.schemaVersion !== 1 || manifest.kind !== 'easi-store-dataset' || manifest.datasetId !== dataset.id || manifest.version !== version.version || manifest.snapshotId !== version.snapshotId || manifest.split !== null || manifest.members.length !== 1 || manifest.summary.instances !== 1) throw new Error('Portable immutable dataset manifest has inconsistent membership, identity or SHA-256.');
+  const member = manifest.members[0], memberPath = `/api/v1/datasets/${dataset.id}/versions/${version.version}/members/${member.memberId}/original`;
+  if (member.studyUid !== sample.studyUid || member.seriesUid !== sample.seriesUid || member.sopUid !== sample.sopUid || member.bytes !== original.length || member.sha256 !== createHash('sha256').update(original).digest('hex') || member.frames !== sample.frames || member.rows !== sample.rows || member.columns !== sample.columns || member.role !== 'image' || member.partition !== null || member.originalPath !== memberPath) throw new Error('Portable frozen member does not match its selected original.');
+  const download = await fetch(`${base}${memberPath}`,{headers});
+  if (download.status !== 200 || download.headers.get('content-type') !== 'application/dicom' || !Buffer.from(await download.arrayBuffer()).equals(original)) throw new Error('Portable frozen-member retrieval changed original encoded bytes.');
+  const availability = await checkedJson(await datasetPost(base,cookie,`/${dataset.id}/versions/${version.version}/availability`,{verifyHashes:true}));
+  if (!availability.verified || availability.summary.total !== 1 || availability.summary.available !== 1 || availability.summary.missing || availability.summary.changed || availability.summary.unreadable || !availability.items[0]?.verified) throw new Error('Portable dataset could not verify its exact original hash.');
+  const consumerPath = '/api/v1/dataset-tools/download_dataset.py', consumer = await fetch(`${base}${consumerPath}`,{headers});
+  const packagedConsumer = await readFile(path.join(bundle,'examples/datasets/download_dataset.py'));
+  if (consumer.status !== 200 || !Buffer.from(await consumer.arrayBuffer()).equals(packagedConsumer)) throw new Error('Portable authenticated downloader route did not return the actual bundled Python consumer.');
+  for (const suffix of ['/api/v1/datasets',`/api/v1/datasets/${dataset.id}`,`/api/v1/datasets/${dataset.id}/readiness`,`/api/v1/datasets/${dataset.id}/versions/${version.version}/manifest`,memberPath,consumerPath]) {
+    const publicResponse = await fetch(`${base}${suffix}`);await publicResponse.body?.cancel();
+    if (publicResponse.status !== 401) throw new Error('Portable dataset management or original download allowed an unauthenticated request.');
+  }
+  for (const suffix of ['',`/${dataset.id}/versions`,`/${dataset.id}/versions/${version.version}/availability`]) {
+    const publicResponse = await datasetPost(base,null,suffix,{});await publicResponse.body?.cancel();
+    if (publicResponse.status !== 401) throw new Error('Portable dataset mutation allowed an unauthenticated request.');
+  }
+  return {datasetId:dataset.id,version:version.version,snapshotId:version.snapshotId,manifestSha256:sha256,manifestBytes:bytes,memberPath};
+}
+async function datasetAfterRemoval(base, cookie, snapshot) {
+  const dataset = await checkedJson(await fetch(`${base}/api/v1/datasets/${snapshot.datasetId}`,{headers:{Cookie:cookie}}));
+  if (dataset.versions.length !== 1 || dataset.versions[0].snapshotId !== snapshot.snapshotId || dataset.versions[0].manifestSha256 !== snapshot.manifestSha256) throw new Error('Portable restart lost the persisted dataset version.');
+  const response = await fetch(`${base}/api/v1/datasets/${snapshot.datasetId}/versions/${snapshot.version}/manifest`,{headers:{Cookie:cookie}});
+  if (response.status !== 200 || response.headers.get('x-easi-manifest-sha256') !== snapshot.manifestSha256 || !Buffer.from(await response.arrayBuffer()).equals(snapshot.manifestBytes)) throw new Error('Portable removal or restart changed frozen dataset membership or manifest bytes.');
+  const availability = await checkedJson(await datasetPost(base,cookie,`/${snapshot.datasetId}/versions/${snapshot.version}/availability`,{verifyHashes:true}));
+  if (availability.verified || availability.summary.total !== 1 || availability.summary.missing !== 1 || availability.summary.available || availability.summary.changed || availability.summary.unreadable) throw new Error('Portable frozen version did not explicitly report its removed original.');
+  const original = await fetch(`${base}${snapshot.memberPath}`,{headers:{Cookie:cookie}});await original.body?.cancel();
+  if (original.status !== 410) throw new Error('Portable frozen member silently substituted or resurrected a removed original.');
+}
+
 async function completedJob(base, cookie, id) {
   for (let attempt = 0; attempt < 100; attempt++) {
     const job = await checkedJson(await fetch(`${base}/api/v1/jobs/${id}`, { headers: { Cookie: cookie } }));
@@ -191,7 +234,7 @@ try {
   let cookie = response.headers.get('set-cookie')?.split(';')[0];
   if (!cookie) throw new Error('Portable setup did not establish a session.');
   const capabilities = await checkedJson(await fetch(`${base}/api/v1/capabilities`, { headers: { Cookie: cookie } }));
-  if (capabilities.version !== manifest.version || capabilities.name !== 'EASI Store' || !capabilities.dicomweb?.frames || !capabilities.dicomweb?.bulkdata || !capabilities.dicomweb?.metadata?.includes('series') || !capabilities.connections?.transferJobs || !capabilities.thumbnails?.managementApi) throw new Error('Portable artifact does not advertise the implemented Phase 2 capabilities and matching version.');
+  if (capabilities.version !== manifest.version || capabilities.name !== 'EASI Store' || !capabilities.dicomweb?.frames || !capabilities.dicomweb?.bulkdata || !capabilities.dicomweb?.metadata?.includes('series') || !capabilities.connections?.transferJobs || !capabilities.thumbnails?.managementApi || !capabilities.datasets?.savedSelections || !capabilities.datasets?.immutableVersions || !capabilities.datasets?.sha256Membership) throw new Error('Portable artifact does not advertise the implemented imaging/dataset capabilities and matching version.');
   response = await mutation('demo', {}, cookie);
   if (!response.ok) throw new Error(`Portable synthetic import failed: ${response.status}`);
   response = await fetch(`${base}/api/v1/summary`, { headers: { Cookie: cookie } });
@@ -214,6 +257,7 @@ try {
   response = await fetch(`${base}/api/v1/instances`, { method: 'POST', headers: { 'Content-Type': 'application/dicom', 'X-EASI-Store': '1', Cookie: cookie }, body: enhanced });
   await checkedJson(response, 201);
   await phase2Dicomweb(base, cookie, sample);
+  const datasetSnapshot = await datasetSmoke(base,cookie,sample,enhanced,bundle);
   const before = await checkedJson(await fetch(`${base}/api/v1/summary`, { headers: { Cookie: cookie } }));
   if (before.instances !== 13) throw new Error('Portable Phase 2 synthetic fixture was not indexed.');
   await stop();
@@ -276,17 +320,19 @@ try {
   if ((await removeStudy('delete')).status !== 400) throw new Error('Portable removal accepted an invalid confirmation.');
   const removal = await checkedJson(await removeStudy('DELETE'));
   if (!removal.deleted || removal.reclamationPending || removal.reclaimedBytes !== enhanced.length) throw new Error('Portable removal did not reclaim the selected original.');
+  await datasetAfterRemoval(base,cookie,datasetSnapshot);
   await stop(); await launch();
   response = await mutation('login',credentials); if (!response.ok) throw new Error('Portable post-removal login failed.');cookie=response.headers.get('set-cookie')?.split(';')[0];
   const cleaned = await checkedJson(await fetch(`${base}/api/v1/summary`,{headers:{Cookie:cookie}}));
   if (cleaned.instances !== demo.instances || cleaned.bytes !== demo.bytes) throw new Error('Portable removal changed unselected studies or did not persist.');
+  await datasetAfterRemoval(base,cookie,datasetSnapshot);
   const records = await checkedJson(await fetch(`${base}/api/v1/activity`,{headers:{Cookie:cookie}}));
   if (!records.items.some(item=>item.outcome==='study-deleted')) throw new Error('Portable removal did not leave a persisted activity record.');
   const shards = await readdir(path.join(dataDir,'objects'),{withFileTypes:true});let originalsOnDisk=0;
   for (const shard of shards.filter(item=>item.isDirectory())) originalsOnDisk+=(await readdir(path.join(dataDir,'objects',shard.name))).filter(name=>name.endsWith('.dcm')).length;
   if (originalsOnDisk !== demo.instances) throw new Error('Portable removal left the selected original on disk.');
   await stop();
-  console.log(JSON.stringify({ artifact: archivePath, sha256: await digest(archivePath), target, runtime: runtimeVersion, version: manifest.version, inventoryFilesVerified: manifest.files.length, systemNodeAvailableToLauncher: false, setup: 'passed', syntheticDemoInstances: demo.instances, syntheticInstances: finalSummary.instances, retainedAfterRemoval:cleaned.instances, originalStudyZipAndManifest:'passed', confirmedRemovalAndDiskReclamation:'passed', removalRestartPersistence:'passed', restartPersistence: 'passed', dicomweb: { query: 'passed', nestedMetadata: 'passed', pixelAndNestedBulk: 'passed', exactNativeFrames: 'passed', protectedRoutes: 'passed', trustedPublicPrefix: 'passed' }, thumbnails: 'passed', configuredPeerCrudAndPersistence: 'passed', duplicateSafeStowSend: 'passed', duplicateSafeWadoRetrieve: 'passed', transferCheckpointPersistence: 'passed', explicitResearchAccessAndPersistence: 'passed', protectedAdministration: 'passed', authenticatedModeRestored: 'passed' }, null, 2));
+  console.log(JSON.stringify({ artifact: archivePath, sha256: await digest(archivePath), target, runtime: runtimeVersion, version: manifest.version, inventoryFilesVerified: manifest.files.length, systemNodeAvailableToLauncher: false, setup: 'passed', syntheticDemoInstances: demo.instances, syntheticInstances: finalSummary.instances, retainedAfterRemoval:cleaned.instances, originalStudyZipAndManifest:'passed', confirmedRemovalAndDiskReclamation:'passed', removalRestartPersistence:'passed', restartPersistence: 'passed', dicomweb: { query: 'passed', nestedMetadata: 'passed', pixelAndNestedBulk: 'passed', exactNativeFrames: 'passed', protectedRoutes: 'passed', trustedPublicPrefix: 'passed' }, datasets:{explicitSelectionAndReadiness:'passed',immutableManifestAndSha256:'passed',exactFrozenOriginal:'passed',hashAvailability:'passed',protectedManagementAndDownloads:'passed',bundledPythonConsumerDownload:'passed',removedOriginalReportedMissing:'passed',noOriginalRetentionPinning:'passed',unchangedManifestAndRestartPersistence:'passed'}, thumbnails: 'passed', configuredPeerCrudAndPersistence: 'passed', duplicateSafeStowSend: 'passed', duplicateSafeWadoRetrieve: 'passed', transferCheckpointPersistence: 'passed', explicitResearchAccessAndPersistence: 'passed', protectedAdministration: 'passed', authenticatedModeRestored: 'passed' }, null, 2));
 } finally {
   await stop();
   await rm(scratch, { recursive: true, force: true });

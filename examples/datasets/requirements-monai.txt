@@ -1,0 +1,8 @@
+# Optional research-side example dependencies; never EASI Store runtime deps.
+# Linux CPU qualification installed torch using the official CPU wheel index:
+# python -m pip install --index-url https://download.pytorch.org/whl/cpu torch==2.8.0
+# Then install this file. Use the proper PyTorch build for your own platform.
+monai==1.6.1
+torch==2.8.0
+numpy==2.2.6
+pydicom==3.0.1

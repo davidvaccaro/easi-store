@@ -91,3 +91,11 @@ PostgreSQL and S3-compatible object storage are separate planned adapters. Intro
 - Benchmark parser throughput, fsync cost, catalog updates, time to first image, and memory on realistic workloads before considering a language port.
 
 The initial implementation deliberately reuses EASI JS. A future native component should solve a demonstrated bottleneck while preserving the storage and protocol contracts.
+
+## Research dataset boundary (0.5.0)
+
+`DatasetService` stores editable cohort definitions and immutable version/member records in the existing durable SQLite catalog. Transactions join the archive write queue and hold read leases so study removal cannot cross the selection snapshot. Snapshots contain projected metadata, hashes and opaque subject references, not duplicated pixels or mutable pointers to a query result. Stored manifest UTF-8 bytes are checked against their frozen SHA-256 before export. Original reads check the frozen catalog identity and stream through byte/hash verification under an archive lease.
+
+Technical review uses indexed fields, without decoding pixels or expanding full metadata for every selected member. Patient grouping reuses issuer/source identity and reports missing/cross-source limitations. Optional partitions apply to saved subject references; no automatic clinical identity reconciliation or label generation occurs. Removing a dataset transactionally removes its own metadata, never image objects. Removing a study can invalidate frozen availability; snapshots do not pin storage.
+
+The Python consumer and optional MONAI reader run outside Store. The former uses standard-library streaming, frozen routes, strict manifest validation, verified restart and atomic local completion; the latter has separately installed pinned research dependencies and a deliberately narrow native-image profile. Neither adds a model or GPU service to the Store runtime.

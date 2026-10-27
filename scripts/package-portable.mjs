@@ -129,10 +129,11 @@ export async function packagePortable(options) {
     const staging = path.join(scratch, 'staging');
     const bundle = path.join(staging, packageName);
     await mkdir(bundle, { recursive: true });
-    for (const filename of ['src', 'dist', 'package.json', 'package-lock.json', 'LICENSE', 'NOTICE', 'licenses', 'README.md', 'CHANGELOG.md', 'docs']) {
+    for (const filename of ['src', 'dist', 'package.json', 'package-lock.json', 'LICENSE', 'NOTICE', 'licenses', 'README.md', 'CHANGELOG.md', 'docs', 'examples']) {
       const source = path.join(projectRoot, filename);
       if (!await exists(source)) throw new Error(`Required release input is missing: ${filename}`);
-      await cp(source, path.join(bundle, filename), { recursive: true });
+      await cp(source, path.join(bundle, filename), { recursive: true,
+        filter: file => !file.split(path.sep).some(part => part === '__pycache__' || part.startsWith('.venv')) && !/\.py[cod]$/.test(file) });
     }
     await mkdir(path.join(bundle, 'scripts'));
     for (const filename of ['launch-macos.command', 'launch-linux.sh', 'launch-windows.cmd']) {
