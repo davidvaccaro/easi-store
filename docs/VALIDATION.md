@@ -65,6 +65,29 @@ qualification. The qualified protocol profile uses RS256 ID tokens and explicit
 subject/group mappings. SAML, SCIM, certificate client authentication, back-channel
 logout and immediate directory-group synchronization are outside this preview.
 
+The [0.6.0 native portable matrix](https://github.com/davidvaccaro/easi-store/actions/runs/40734648475)
+passed on macOS ARM64, Linux x64 and Windows x64 for source
+`ec49911d4e4c4c6ebf1322415cb3cb26c6703c8d`: all **260 tests** on each platform,
+with zero skips or cancellations, TypeScript/build/distribution checks,
+bundled Node 24.22.1 and the actual portable launcher smoke. Each platform
+passed all nine identity and nine dataset assertions. The
+[Check/Docker workflow](https://github.com/davidvaccaro/easi-store/actions/runs/40734578702)
+also passed for that source. The Windows restore test closes its restored
+database before removing the temporary parent directory; no runtime change
+was required for that platform correction.
+
+All three downloaded candidates were independently checked against GitHub's
+artifact digests, inner SHA-256 sidecars, complete inventories and **78 tracked
+release inputs** from the exact commit. Inventory counts were 5,465 on macOS,
+5,465 on Linux and 2,665 on Windows; Windows text comparisons normalize line
+endings. Verified packages and receipts are retained under ignored
+`artifacts/native-ci/identity-ec49911/`. The local Docker/browser qualification
+above exercises the same runtime inputs; the later correction changes only
+test cleanup and deployment documentation. These checks qualify the named
+preview profiles, not signed installers, live organizational tenants or a
+stable-v1 release. Later documentation-only evidence commits leave the
+qualified runtime unchanged.
+
 ## Research datasets — 0.5.0 preview, 2026-10-27
 
 The integrated candidate passed **222 synthetic tests**, source guards,
