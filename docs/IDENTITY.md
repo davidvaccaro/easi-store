@@ -95,10 +95,13 @@ Start Store with the configured public endpoint:
 ```sh
 node src/cli.js start \
   --public-url https://store.example.org \
+  --access-profile authenticated \
   --auth-config /absolute/path/to/private-auth.json
 ```
 
 `EASI_STORE_AUTH_CONFIG` can supply the file path instead. Restart after changing the configuration. For Docker, mount the private configuration read-only and ensure Store's UID10001 can read it. Keep HTTP behind a properly configured HTTPS reverse proxy. Native DIMSE still requires its separately configured listener and AE/IP policy.
+
+For an organizational deployment, explicitly select authenticated client access. Sign-in mode and DICOMweb client access are separate settings: enabling SSO does not replace a previously selected `local-research` policy. Keep that research profile private to the workstation.
 
 Only the configured issuer is trusted. Store uses validated issuer plus subject (`iss` + `sub`) as the external identity key. Email, display name and a matching local username do not link accounts or grant access. Explicit subject and group mappings contribute roles; when more than one mapping matches, the highest explicitly granted role applies. A subject mapping does not override a more privileged matching group. There is no default role for every person who can sign into the organization. Unmapped users are denied, and changing a mapping is an administrative configuration change.
 

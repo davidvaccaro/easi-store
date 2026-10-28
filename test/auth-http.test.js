@@ -226,21 +226,26 @@ test('offline full backup/restore preserves credential roles and revocation whil
     const backup = path.join(f.directory, 'backup'), restored = path.join(f.directory, 'restored');
     await execFile(process.execPath, [cli, 'backup', '--data-dir', f.dataDir, '--output', backup]);
     await execFile(process.execPath, [cli, 'restore', '--input', backup, '--data-dir', restored]);
-    const app = await createStoreServer({ dataDir: restored, port: 0 }), address = await app.listen(), base = `http://127.0.0.1:${address.port}`;
-    t.after(() => app.close());
-    const request = (route, token) => fetch(base + route, { headers: { Authorization: `Bearer ${token}` } });
-    assert.equal((await request('/api/v1/summary', f.credentials.reader.token)).status, 401);
-    assert.equal((await request('/api/v1/summary', f.credentials.contributor.token)).status, 200);
-    assert.equal((await request('/api/v1/identity', f.credentials.contributor.token)).status, 403);
-    assert.equal(app.archive.db.prepare('PRAGMA user_version').get().user_version, 3);
-    assert.equal(JSON.parse(await readFile(path.join(restored, 'auth.json'))).version, 2);
-    const listing = await (await request('/api/v1/auth/tokens', administrator)).json();
-    assert.equal(listing.items.find(item => item.id === f.credentials.reader.record.id).role, 'reader');
-    assert.ok(listing.items.find(item => item.id === f.credentials.reader.record.id).revokedAt);
-    assert.equal(listing.items.find(item => item.id === f.credentials.contributor.record.id).role, 'contributor');
-    assert.equal((await fetch(base + '/api/v1/summary', { headers: { Cookie: f.cookie } })).status, 401);
-    const r = reference(f), response = await request(r.original, f.credentials.contributor.token); assert.equal(response.status, 200);
-    assert.deepEqual(Buffer.from(await response.arrayBuffer()), f.original);
+    const app = await createStoreServer({ dataDir: restored, port: 0 });
+    try {
+        const address = await app.listen(), base = `http://127.0.0.1:${address.port}`;
+        const request = (route, token) => fetch(base + route, { headers: { Authorization: `Bearer ${token}` } });
+        assert.equal((await request('/api/v1/summary', f.credentials.reader.token)).status, 401);
+        assert.equal((await request('/api/v1/summary', f.credentials.contributor.token)).status, 200);
+        assert.equal((await request('/api/v1/identity', f.credentials.contributor.token)).status, 403);
+        assert.equal(app.archive.db.prepare('PRAGMA user_version').get().user_version, 3);
+        assert.equal(JSON.parse(await readFile(path.join(restored, 'auth.json'))).version, 2);
+        const listing = await (await request('/api/v1/auth/tokens', administrator)).json();
+        assert.equal(listing.items.find(item => item.id === f.credentials.reader.record.id).role, 'reader');
+        assert.ok(listing.items.find(item => item.id === f.credentials.reader.record.id).revokedAt);
+        assert.equal(listing.items.find(item => item.id === f.credentials.contributor.record.id).role, 'contributor');
+        assert.equal((await fetch(base + '/api/v1/summary', { headers: { Cookie: f.cookie } })).status, 401);
+        const r = reference(f), response = await request(r.original, f.credentials.contributor.token); assert.equal(response.status, 200);
+        assert.deepEqual(Buffer.from(await response.arrayBuffer()), f.original);
+    } finally {
+        // Close restored SQLite/HTTP resources before setup() removes their parent directory on Windows.
+        await app.close();
+    }
 });
 
 test('offline password-file recovery requires a stopped archive, revokes existing tokens and records the local operator without secret arguments', { timeout: 25000 }, async t => {

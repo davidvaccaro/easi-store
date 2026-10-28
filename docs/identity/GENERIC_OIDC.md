@@ -61,10 +61,13 @@ Protect it for the service account: owner-only permissions on macOS/Linux (`chmo
 ```sh
 node src/cli.js start \
   --public-url https://store.example.org \
+  --access-profile authenticated \
   --auth-config /absolute/path/private-auth.json
 ```
 
 `EASI_STORE_AUTH_CONFIG` is an alternative file-path setting. For Docker, mount the file read-only and make it readable by Store's UID10001. Restart after changing the file. Keep the external configuration, client registration and secret rotation procedure in protected deployment backups; the archive backup does not automatically collect that external file.
+
+Explicitly select authenticated client access for organizational deployments. Sign-in mode and DICOMweb client access are separate settings; an existing `local-research` policy is not replaced by enabling SSO. Keep that research profile private to the workstation.
 
 `allowInsecureLoopback` is only for explicitly configured synthetic testing using literal loopback URLs. It is not an organizational network deployment setting.
 
