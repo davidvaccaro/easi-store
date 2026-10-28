@@ -2,11 +2,11 @@
 
 Download versioned runtime bundles from [the GitHub release](https://github.com/davidvaccaro/easi-store/releases/tag/v1.0.0-rc.1). They include the application, locked runtime dependencies, a verified Node runtime, licenses, SECURITY.md and `SBOM.cdx.json`. Unused bundled npm/npx/corepack tools are omitted; normal startup needs no package manager. Compare the published checksums before extracting.
 
-The first preview offers three installation paths. They all run the same server and use a separate persistent archive directory.
+The release candidate offers three installation paths. They all run the same server and use a separate persistent archive directory.
 
 | Path | What the user needs | First action |
 | --- | --- | --- |
-| Docker Compose | Docker Engine/Desktop + Compose | `docker compose up --build -d` |
+| Docker Compose | Docker Engine/Desktop + Compose | `docker compose pull` then `docker compose up --no-build -d` |
 | Source launcher | Node.js 24, npm, source checkout | Open the platform launcher in `scripts/` |
 | Portable runtime bundle | Extract the correct OS/CPU package | Open `Start EASI Store` |
 
@@ -14,9 +14,16 @@ A portable package is not a signed operating-system installer. The preview inclu
 
 ## Docker
 
+The versioned published image supports **Linux AMD64 and ARM64**. From a source
+checkout, pull the qualified image and start the supplied persistent-volume
+configuration:
+
 ```sh
-docker compose up --build -d
+docker compose pull
+docker compose up --no-build -d
 ```
+
+To build from source instead, run `docker compose up --build -d`.
 
 Compose publishes HTTP on **127.0.0.1:8048**, uses a persistent named volume, runs the server as a non-root user, and enables a minimal healthcheck. HTTP binds container interfaces for port forwarding; DIMSE stays on container loopback and is not published by default. To enable network DIMSE, configure its exact calling-AE/IP trust policy, explicitly set `EASI_STORE_DIMSE_HOST=0.0.0.0`, and publish the desired port. See [access control](ACCESS_CONTROL.md) and [DIMSE setup](DIMSE.md). Its root filesystem is read-only; `/data` and the temporary mount are writable. On first setup, retrieve the bootstrap token with `docker compose exec store cat /data/bootstrap-token` if requested by the UI.
 
@@ -26,12 +33,14 @@ To build without Compose:
 docker build --tag ghcr.io/davidvaccaro/easi-store:1.0.0-rc.1 .
 docker volume create easi-store-archive
 docker run --rm --init --name easi-store \
+  --read-only --tmpfs /tmp:size=64m,mode=1777 \
+  --cap-drop ALL --security-opt no-new-privileges \
   --publish 127.0.0.1:8048:8048 \
   --mount source=easi-store-archive,target=/data \
   ghcr.io/davidvaccaro/easi-store:1.0.0-rc.1
 ```
 
-This builds an image locally. No Docker Hub/GHCR image publication is implied. The image recipe pins the reviewed Node 24.22.1 base digest. The publication workflow checks the exact-source native/check runs, qualifies both native CPU images (including exhausted-storage recovery), scans each image and then publishes the versioned multi-platform manifest. Full scan reports retain vendor-deferred findings; fixable HIGH/CRITICAL findings block publication.
+The preceding standalone command builds an image locally; omit its build step and run `docker pull ghcr.io/davidvaccaro/easi-store:1.0.0-rc.1` to use the published image. The image recipe pins the reviewed Node 24.22.1 base digest. The publication workflow checks the exact-source native/check runs, qualifies both native CPU images (including exhausted-storage recovery), scans each image and then publishes the versioned multi-platform manifest. Full scan reports retain vendor-deferred findings; fixable HIGH/CRITICAL findings block publication.
 
 ## Source launchers
 

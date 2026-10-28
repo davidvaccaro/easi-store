@@ -38,7 +38,7 @@ recovery evidence, not a general throughput or concurrency guarantee.
 
 The full explicitly local corpus run examined **26,162 files**: 16,143 unique
 instances stored and retrieved byte-identically, 235 byte-identical duplicates,
-7,485 explicit UID/hierarchy/patient conflicts,104 rejected inputs and 2,195 files
+7,485 explicit UID/hierarchy/patient conflicts, 104 rejected inputs and 2,195 files
 without a supported Part10 prefix. There were no request/integrity failures.
 The final full SHA review checked all 16,143 retained originals / 3,060,724,102 bytes
 with zero missing, corrupt, unreferenced, unsafe or unreadable objects. The
@@ -65,7 +65,7 @@ The volatile tmpfs exercise qualifies process recovery under storage pressure;
 it is not a claim of persistence across a container/power loss on tmpfs.
 
 Independent Orthanc 1.12.8 with DICOMweb 1.19 passed 12 protocol groups using
-only generated data: Verification both ways; Store SCP C-STORE, C-FIND at study/
+only generated CT with Explicit VR Little Endian: Verification both ways; Store SCP C-STORE, C-FIND at study/
 series/image levels, C-GET and C-MOVE; Store SCU storage/find/durable get; explicit
 low-space receiving failure; and authenticated QIDO/STOW/WADO both directions.
 HTTP Part10 bytes and DIMSE encoded datasets are checked separately. This found
@@ -74,6 +74,8 @@ boundary exception, covered by four regressions without relaxing ordinary MIME
 or resource bounds. The separate correlated move check retained whole-study,
 series, instance, duplicate and missing-destination coverage. Existing user
 Orthanc/configuration/storage were untouched; disposable servers were removed.
+This independent matrix does not qualify compressed transfer syntaxes or DICOM
+TLS; the declared protocol profile records those limits.
 
 The final image's npm/application audit and pinned Trivy scan pass the policy
 of no fixable HIGH/CRITICAL findings. Full retained reports include vendor-
@@ -81,8 +83,60 @@ unfixed/deferred Debian findings; [SECURITY_NOTES.md](SECURITY_NOTES.md) records
 that boundary and the unused package-manager removal. The release is not claimed
 to be vulnerability-free.
 
-Candidate-specific native release artifacts and publication receipts are
-recorded separately below as their publication gates complete.
+The [native release matrix](https://github.com/davidvaccaro/easi-store/actions/runs/40761367181)
+and [Check/Docker workflow](https://github.com/davidvaccaro/easi-store/actions/runs/40761294650)
+passed for exact source `3a2dc21702400e33b6a4b1bb924edbb27d8bdc7f`.
+macOS ARM64, Linux x64 and Windows x64 each passed **304 tests**, with zero skips
+or cancellations, plus the actual bundled-runtime launcher smoke. Each portable
+passed all nine identity, nine dataset, ten health and four supply-chain checks.
+The only correction after the initial local qualification makes its Unix file-mode
+assertion conditional on POSIX; no runtime behavior changed.
+
+Each downloaded package was independently verified against GitHub's artifact
+digest, its inner SHA-256 sidecar, every inventory file, 84 packaged source inputs
+from the exact commit, and its root CycloneDX SBOM. Inventory counts are 3,492 on
+macOS/Linux and 684 on Windows; Windows source comparisons account for CRLF.
+Bundled Node 24.22.1 starts without system Node, npm or Python. Release archives
+are unsigned portable packages, not signed operating-system installers.
+
+| Native package | SHA-256 |
+| --- | --- |
+| macOS ARM64 | `628e4e24b895cab84cade35af8b42f2de52651da7c623aa7476bdc2cf81ef800` |
+| Linux x64 | `00e962a216db2079adfa76393c7d686bb4c70538a580d436a5b23215ac763950` |
+| Windows x64 | `df96d87afe76c2c6002fa9daf7d9eebe342c6a50a79d860ea1cacd5c0fc9ac46` |
+
+Before upgrading the local archive, a fresh protected offline backup was checked:
+all 2,998 backup entries and all 2,992 original hashes matched. The candidate
+retained one patient, two studies, 20 series, 1,596,352,936 original bytes, both
+configured peers, dataset state, exact authentication state and client-access
+policy. The running version reports 1.0.0-rc.1; no original was rewritten.
+
+The [qualified container publication](https://github.com/davidvaccaro/easi-store/actions/runs/40762039854)
+passed for that same source. Each native Linux AMD64/ARM64 build passed all seven
+actual-container groups, including real constrained-filesystem exhaustion and
+recovery, plus runtime dependency audit, full-image scan and the no-fixable-
+HIGH/CRITICAL publication gate. Both full reports retain 229 findings, including
+vendor-unfixed/deferred entries; the gate does not mean zero total findings.
+A first-package registry manifest-write denial on AMD64 was resolved by retrying
+the failed job; no code or permissions changed, and the retried image was rebuilt,
+qualified and scanned again before publication.
+
+The published `ghcr.io/davidvaccaro/easi-store:1.0.0-rc.1` index is
+`sha256:e20088872a42ce8c7587de62a353631cb4fd663d19a9e4cc3af6624bc8480ba4`.
+Its Linux AMD64 manifest is
+`sha256:03e2701310dfa20ca458d2f29901b1c49f71ab32e4a46c2d6d0ee1d51f7e4900`;
+Linux ARM64 is
+`sha256:a9f8423d8e6bdbb83cf07e00d9486d894db37c6ba1d23ea34b753092c91e33bf`.
+These CI images have their own qualification receipts; the earlier local image
+ID above is not substituted for a published image digest.
+
+[Release downloads](https://github.com/davidvaccaro/easi-store/releases/tag/v1.0.0-rc.1)
+include the three native bundles, SHA-256 sidecars, `SHA256SUMS`, per-platform
+CycloneDX inventories and sanitized validation/security reports. Private corpus
+per-file reports, archives and deployment credentials are excluded. Source is
+published under the Community License. Exact-candidate receipts remain retained
+under ignored local artifact directories; later documentation-only commits do
+not change the qualified runtime or replace the tagged package contents.
 These results qualify the [declared first-release profile](CONFORMANCE.md),
 not arbitrary PACS topologies, every stored object's rendering or clinical use.
 

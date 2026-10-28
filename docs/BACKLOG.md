@@ -95,6 +95,18 @@ Do not equate “QIDO + WADO + STOW routes exist” with implementing the entire
 
 The candidate adds live storage/intake safeguards, Archive health, bounded read-only integrity reviews and offline verification, plus explicit hosted-mode research rejection. Reusable qualification covers a private local corpus, mixed concurrent work, interrupted-process recovery, offline restore, actual constrained-filesystem exhaustion, real Keycloak/HTTPS and independent PACS interoperability. Native/container publication remains tied to exact-source results and security scans. [Supported profile](CONFORMANCE.md), [health operations](HEALTH.md) and [candidate evidence](VALIDATION.md) define the final scope and gates; later platform/service expansion stays demand-led.
 
+The four v1-readiness workstreams are complete for the declared RC profile:
+
+1. Archive health, intake/capacity protection and integrity review.
+2. Hosted-mode safeguards and real HTTPS/Keycloak role qualification.
+3. Full local-corpus, independent Orthanc, concurrency, interruption, disk-full and backup/restore qualification.
+4. Audited public source, three verified portable bundles, two native container architectures, checksums, dependency inventories and release documentation.
+
+[The exact-candidate evidence](VALIDATION.md) records the outcome and limits.
+Stable promotion remains a separate versioned release; this candidate is
+`1.0.0-rc.1`. No additional feature family is a prerequisite for that supported
+single-host profile.
+
 ## Stable 1.0 gate
 
 A stable version requires a declared supported profile, independent interoperability evidence, reproducible clean installation, a proven backup/restore path, bounded-resource behavior, upgrade/recovery tests, clear user workflows, complete license/notices, and an explicit operational support statement. AI, cloud lock-in, a marketplace, and an unqualified language port are not prerequisites.
