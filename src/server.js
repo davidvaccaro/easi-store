@@ -26,7 +26,7 @@ const root = fileURLToPath(new URL('../', import.meta.url));
 const mime = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8',
     '.json': 'application/json', '.svg': 'image/svg+xml', '.png': 'image/png', '.wasm': 'application/wasm', '.txt': 'text/plain; charset=utf-8' };
 export const CAPABILITIES = {
-    name: 'EASI Store', version: VERSION, status: 'v1 workflow preview', standardBaseline: 'DICOM PS3.18 2026d',
+    name: 'EASI Store', version: VERSION, status: 'v1 release candidate', standardBaseline: 'DICOM PS3.18 2026d',
     dicomweb: { basePath: '/dicomweb', qido: ['studies', 'series', 'instances'],
         stow: ['multipart/related; type="application/dicom"'], wado: ['original instances', 'original series', 'original studies'],
         transcoding: { completeInstance: false, nativeFrames: 'Little Endian word conversion; original compressed frames preserved' },
@@ -38,6 +38,7 @@ export const CAPABILITIES = {
         roles: ['reader', 'contributor', 'administrator'], scopedTokens: true },
     viewer: { name: 'EASI View', version: '1.0.0-rc.1', releaseCandidate: true, loading: 'Metadata-first DICOMweb; requested originals loaded on demand' },
     management: { originalStudyExport: 'Streaming ZIP/ZIP64 with SHA-256 manifest',
+        archiveHealth: { capacityAdmission: true, boundedIntegrityAudit: true, repairsOriginals: false },
         studyRemoval: { previewRequired: true, confirmation: 'DELETE', scope: 'Store archival copies only' } },
     datasets: { savedSelections: true, immutableVersions: true, sha256Membership: true,
         optionalSubjectGroupedSplits: true, indexedTechnicalChecks: true, verifiedPythonDownloads: true,
@@ -52,10 +53,10 @@ export const CAPABILITIES = {
 };
 
 export async function createStoreServer(options) {
-    const { dataDir, authConfiguration, host = '127.0.0.1', port = 8048, publicUrl: configuredPublicUrl, maxInstanceBytes = 536870912,
+    const { dataDir, authConfiguration, host = '127.0.0.1', port = 8048, publicUrl: configuredPublicUrl, hosted = false, healthOptions, maxInstanceBytes = 536870912,
         staticRoot = path.join(root, 'dist/public'), credentials = {}, accessProfile, dimsePolicy, autoStartJobs = true, dimseHost = isLoopbackAddress(host) ? host : '127.0.0.1' } = options;
     const publicUrl = configuredPublicUrl || (authConfiguration?.oidc?.callbackUrl ? new URL(authConfiguration.oidc.callbackUrl).origin : undefined);
-    const archive = await Archive.open({ dataDir, maxInstanceBytes });
+    const archive = await Archive.open({ dataDir, maxInstanceBytes, healthOptions });
     let auth, securityAudit;
     try {
         securityAudit = new SecurityAudit(archive);
@@ -63,8 +64,8 @@ export async function createStoreServer(options) {
         if (auth.description().mode === 'oidc' && !auth.record) throw httpError(400, 'Create the local recovery administrator before enabling SSO-only mode.');
     } catch (error) { await auth?.close(); await archive.close(); throw error; }
     let accessPolicy;
-    try { accessPolicy = await new AccessPolicy({ dataDir, host, dimseHost }).open({ profile: accessProfile, dimse: dimsePolicy }); }
-    catch (error) { await archive.close(); throw error; }
+    try { accessPolicy = await new AccessPolicy({ dataDir, host, dimseHost, publicUrl, hosted }).open({ profile: accessProfile, dimse: dimsePolicy }); }
+    catch (error) { await auth.close(); await archive.close(); throw error; }
     let connections, moveCoordinator, datasets;
     try {
         moveCoordinator = new MoveCoordinator({ archive });
@@ -124,6 +125,10 @@ export async function createStoreServer(options) {
             const action = auditAction(method, p);
             if (action) auditId = securityAudit.begin(identity, action);
             if (p === '/api/health' && method === 'GET') return json(res, 200, { status: 'ok', version: VERSION });
+            if (p === '/api/ready' && method === 'GET') {
+                const health = await archive.health.getSnapshot();
+                return json(res, health.ready ? 200 : 503, { ready: health.ready, version: VERSION });
+            }
             if (p === '/api/v1/access' && method === 'GET') return json(res, 200, accessPolicy.publicDescription(req));
             if (p === '/api/v1/session' && method === 'GET') return json(res, 200, { authenticated: Boolean(identity), setupRequired: !auth.record,
                 bootstrapRequired: !auth.record && !isLoopback(req.socket.remoteAddress), identity: publicIdentity(identity),
@@ -177,6 +182,20 @@ export async function createStoreServer(options) {
                 res.setHeader('Set-Cookie', cookie('', req, true)); return json(res, 200, result);
             }
             if (p === '/api/v1/auth/activity' && method === 'GET') return json(res, 200, securityAudit.list());
+            if (p === '/api/v1/health' && method === 'GET') return json(res, 200, await archive.health.getSnapshot());
+            if (p === '/api/v1/health/settings' && method === 'PUT') return json(res, 200, await archive.health.updateSettings(await readJson(req, 4096)));
+            if (p === '/api/v1/health/audits' && method === 'POST') {
+                const body = await readJson(req, 1024);
+                if (Object.keys(body).some(key => key !== 'verifyHashes') || body.verifyHashes !== undefined && typeof body.verifyHashes !== 'boolean') throw httpError(400, 'Use only the boolean verifyHashes audit option.');
+                return json(res, 202, await archive.health.startAudit(body));
+            }
+            const auditRoute = p.match(/^\/api\/v1\/health\/audits\/([a-f0-9-]{36})$/);
+            if (auditRoute && method === 'GET') {
+                const report = archive.health.getAudit(auditRoute[1]);
+                if (!report) throw httpError(404, 'This integrity report is no longer available.');
+                return json(res, 200, report);
+            }
+            if (auditRoute && method === 'DELETE') return json(res, 200, await archive.health.cancelAudit(auditRoute[1]));
             // A read lease lasts through streaming/worker completion, so an
             // administrator cannot remove originals from an active reader.
             if ((method === 'GET' || method === 'HEAD') && (dicomwebPath || p.startsWith('/api/v1/download/') || /\/thumbnail$/.test(p)
@@ -278,9 +297,16 @@ export async function createStoreServer(options) {
             if (method === 'HEAD') res.end(); else await pipeline(createReadStream(filename), res);
         } catch (error) {
             if (res.headersSent) { res.destroy(); return; }
-            const status = error.statusCode || error.status || 500;
+            const diskFull = ['ENOSPC', 'EDQUOT'].includes(error.code) || error.code === 'ERR_SQLITE_ERROR' && error.errcode === 13;
+            const status = diskFull ? 507 : error.statusCode || error.status || 500;
+            const storageMessages = {
+                'insufficient-storage': 'New imports are paused because available storage is below the configured reserve. Free disk space or review Archive health settings.',
+                'storage-unavailable': 'New imports are paused because available storage could not be checked. Review Archive health and the archive filesystem.',
+                'intake-busy': 'The archive has reached its configured concurrent import limit. Wait for current imports to finish and retry.'
+            };
+            const storageMessage = diskFull ? 'The archive filesystem is full. Free unrelated disk space or expand the volume, then review Archive health before retrying.' : storageMessages[error.code];
             json(res, Number.isInteger(status) && status >= 400 && status <= 599 ? status : 500,
-                { error: { code: status === 500 ? 'INTERNAL_ERROR' : `HTTP_${status}`, message: status >= 500 ? 'The archive could not complete this request. Check server status and retry.' : error.message } });
+                { error: { code: diskFull ? 'insufficient-storage' : storageMessage ? error.code : status === 500 ? 'INTERNAL_ERROR' : `HTTP_${status}`, message: storageMessage || (status >= 500 ? 'The archive could not complete this request. Check server status and retry.' : error.message) } });
             if (status >= 500) console.error(`Request failed (${error.code || error.name || 'Error'}).`);
         } finally { activeReaders.delete(res); releaseRead?.(); }
     }));

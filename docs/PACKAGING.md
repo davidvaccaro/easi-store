@@ -1,4 +1,6 @@
-# Installation and packaging
+# Installation and packaging — 1.0.0-rc.1
+
+Download versioned runtime bundles from [the GitHub release](https://github.com/davidvaccaro/easi-store/releases/tag/v1.0.0-rc.1). They include the application, locked runtime dependencies, a verified Node runtime, licenses, SECURITY.md and `SBOM.cdx.json`. Unused bundled npm/npx/corepack tools are omitted; normal startup needs no package manager. Compare the published checksums before extracting.
 
 The first preview offers three installation paths. They all run the same server and use a separate persistent archive directory.
 
@@ -21,15 +23,15 @@ Compose publishes HTTP on **127.0.0.1:8048**, uses a persistent named volume, ru
 To build without Compose:
 
 ```sh
-docker build --tag easi-store:0.5.0-preview .
+docker build --tag ghcr.io/davidvaccaro/easi-store:1.0.0-rc.1 .
 docker volume create easi-store-archive
 docker run --rm --init --name easi-store \
   --publish 127.0.0.1:8048:8048 \
   --mount source=easi-store-archive,target=/data \
-  easi-store:0.5.0-preview
+  ghcr.io/davidvaccaro/easi-store:1.0.0-rc.1
 ```
 
-This builds an image locally. No Docker Hub/GHCR image publication is implied. The image recipe follows the Node 24 base image; a qualified release should additionally record the resolved base-image digest and scan the image it actually publishes.
+This builds an image locally. No Docker Hub/GHCR image publication is implied. The image recipe pins the reviewed Node 24.22.1 base digest. The publication workflow checks the exact-source native/check runs, qualifies both native CPU images (including exhausted-storage recovery), scans each image and then publishes the versioned multi-platform manifest. Full scan reports retain vendor-deferred findings; fixable HIGH/CRITICAL findings block publication.
 
 ## Source launchers
 
@@ -60,14 +62,14 @@ npm run artifact:pack -- --bundle-runtime \
   --output /absolute/path/to/release-artifacts
 ```
 
-Recognized targets are `darwin-arm64`, `darwin-x64`, `linux-arm64`, `linux-x64`, `win32-arm64`, and `win32-x64`. Recognition means the packager knows the official Node distribution name; it is not evidence that Store has passed native tests on all six targets. The historical **0.1.0** [native macOS, Windows, and Linux matrix passed](https://github.com/davidvaccaro/easi-store/actions/runs/40103493426) on 2026-10-24, including its 27-test suite and actual runtime-bundled launcher smoke checks. Local macOS ARM64 baseline packaging also passed. Those results do not certify a changed 0.5.0 package. See [candidate-specific validation evidence](VALIDATION.md), and review the exact run and actual CPU architecture before publishing a candidate.
+Recognized targets are `darwin-arm64`, `darwin-x64`, `linux-arm64`, `linux-x64`, `win32-arm64`, and `win32-x64`. Recognition means the packager knows the official Node distribution name; it is not evidence that Store has passed native tests on all six targets. The historical **0.1.0** [native macOS, Windows, and Linux matrix passed](https://github.com/davidvaccaro/easi-store/actions/runs/40103493426) on 2026-10-24, including its 27-test suite and actual runtime-bundled launcher smoke checks. Local macOS ARM64 baseline packaging also passed. Those historical results do not certify a changed candidate. See [candidate-specific validation evidence](VALIDATION.md), and review the exact run and actual CPU architecture before publishing a candidate.
 
 The packager:
 
 1. Requires an existing built UI and release/legal inputs.
 2. Copies an allowlist of application, built assets, documentation, and license files into a clean temporary directory.
 3. Runs `npm ci --omit=dev --ignore-scripts` against the lockfile there. It never copies a developer's installed modules or local archive.
-4. With `--bundle-runtime`, downloads an exact Node 24 distribution and `SHASUMS256.txt` from `https://nodejs.org/dist/vVERSION/`, verifies SHA-256 before extracting it, and retains its licenses.
+4. With `--bundle-runtime`, downloads an exact Node 24 distribution and `SHASUMS256.txt` from `https://nodejs.org/dist/vVERSION/`, verifies SHA-256 before extracting it, and retains its licenses while omitting unused npm/npx/corepack tools.
 5. Adds a platform entry launcher, a file/hash inventory in `ARTIFACT.json`, and the runtime source/version/checksum when bundled.
 6. Creates a `.tar.gz` for macOS/Linux or `.zip` for Windows, plus a SHA-256 sidecar. Existing artifacts are not silently replaced.
 
@@ -97,7 +99,7 @@ Get-FileHash .\easi-store-*.zip -Algorithm SHA256
 
 `ARTIFACT.json` records build contents and runtime provenance. A checksum detects mismatches; it does not establish who published the artifact unless you trust the source of the expected checksum.
 
-The manually triggered `.github/workflows/portable.yml` workflow tests, builds, and uploads candidate packages. It does not create a GitHub release, publish an npm/Docker package, or sign an installer. Those publication steps need a qualified release and an explicit publication decision.
+The manually triggered `.github/workflows/portable.yml` workflow tests, builds, and uploads candidate packages. `.github/workflows/publish-container.yml` accepts their successful exact-source run IDs and publishes only after both architecture-specific container/runtime/security gates pass. The portable workflow does not itself create a GitHub release or publish an npm package. Versioned releases attach the verified bundles/checksums; the separate container workflow publishes the images. Neither workflow signs a native installer.
 
 ## Verified Phase 2 candidate
 

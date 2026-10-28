@@ -91,6 +91,10 @@ Do not equate “QIDO + WADO + STOW routes exist” with implementing the entire
 - Use auth-state version2 and catalog schema3 as an explicit security downgrade fence; qualify full backup/restore and rejection by older runtimes without rewriting originals.
 - Qualify against a controlled synthetic provider and supported deployment topology. Real organizational provider/reverse-proxy qualification, detailed resource scopes, multi-tenant authorization, SAML, SCIM and multiple providers remain separate work. See [IDENTITY.md](IDENTITY.md).
 
+## First-release readiness candidate — 1.0.0-rc.1
+
+The candidate adds live storage/intake safeguards, Archive health, bounded read-only integrity reviews and offline verification, plus explicit hosted-mode research rejection. Reusable qualification covers a private local corpus, mixed concurrent work, interrupted-process recovery, offline restore, actual constrained-filesystem exhaustion, real Keycloak/HTTPS and independent PACS interoperability. Native/container publication remains tied to exact-source results and security scans. [Supported profile](CONFORMANCE.md), [health operations](HEALTH.md) and [candidate evidence](VALIDATION.md) define the final scope and gates; later platform/service expansion stays demand-led.
+
 ## Stable 1.0 gate
 
 A stable version requires a declared supported profile, independent interoperability evidence, reproducible clean installation, a proven backup/restore path, bounded-resource behavior, upgrade/recovery tests, clear user workflows, complete license/notices, and an explicit operational support statement. AI, cloud lock-in, a marketplace, and an unqualified language port are not prerequisites.

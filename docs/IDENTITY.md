@@ -95,6 +95,7 @@ Start Store with the configured public endpoint:
 ```sh
 node src/cli.js start \
   --public-url https://store.example.org \
+  --hosted \
   --access-profile authenticated \
   --auth-config /absolute/path/to/private-auth.json
 ```

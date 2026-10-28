@@ -1,0 +1,146 @@
+name: Publish qualified container
+on:
+  workflow_dispatch:
+    inputs:
+      source_commit:
+        description: Exact qualified source commit (40 characters)
+        required: true
+        type: string
+      portable_run:
+        description: Successful three-platform Portable candidates run ID
+        required: true
+        type: string
+      check_run:
+        description: Successful Check run ID for that source
+        required: true
+        type: string
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: container-publication
+  cancel-in-progress: false
+jobs:
+  gate:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      version: ${{ steps.gate.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.source_commit }}
+      - name: Verify exact-source qualification
+        id: gate
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_COMMIT: ${{ inputs.source_commit }}
+          PORTABLE_RUN: ${{ inputs.portable_run }}
+          CHECK_RUN: ${{ inputs.check_run }}
+        run: |
+          python3 - <<'PY'
+          import json, os, re, urllib.request
+          commit = os.environ['SOURCE_COMMIT']
+          assert re.fullmatch('[a-f0-9]{40}', commit), 'An exact commit is required.'
+          def get(resource):
+              url = 'https://api.github.com/repos/' + os.environ['GITHUB_REPOSITORY'] + '/' + resource
+              request = urllib.request.Request(url, headers={'Authorization':'Bearer ' + os.environ['GH_TOKEN'], 'Accept':'application/vnd.github+json'})
+              with urllib.request.urlopen(request, timeout=30) as response: return json.load(response)
+          for name, workflow in [('PORTABLE_RUN', 'portable.yml'), ('CHECK_RUN', 'check.yml')]:
+              run_id = os.environ[name]
+              assert run_id.isdecimal(), 'Invalid workflow run ID.'
+              run = get('actions/runs/' + run_id)
+              assert run['head_sha'] == commit and run['status'] == 'completed' and run['conclusion'] == 'success', 'Source qualification must be complete and successful.'
+              assert run['path'] == '.github/workflows/' + workflow, 'Unexpected qualification workflow.'
+              if name == 'PORTABLE_RUN':
+                  jobs = get('actions/runs/' + run_id + '/jobs')['jobs']
+                  assert len(jobs) == 3 and all(job['conclusion'] == 'success' for job in jobs), 'All three native jobs must pass.'
+          version = json.load(open('package.json'))['version']
+          assert re.fullmatch(r'\d+\.\d+\.\d+(?:-rc\.\d+)?', version), 'Unsupported release version.'
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as output: output.write('version=' + version + '\n')
+          print('Qualified source and native matrix verified for ' + version)
+          PY
+  images:
+    needs: gate
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-latest
+            arch: amd64
+          - runner: ubuntu-24.04-arm
+            arch: arm64
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.source_commit }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci --no-audit --no-fund
+      - name: Runtime dependency audit and inventory
+        run: |
+          mkdir -p artifacts
+          npm audit --omit=dev --audit-level=high --json > artifacts/npm-audit.json
+          npm sbom --package-lock-only --omit=dev --sbom-format=cyclonedx > artifacts/runtime.cdx.json
+      - name: Build exact native image
+        env:
+          STORE_VERSION: ${{ needs.gate.outputs.version }}
+          SOURCE_COMMIT: ${{ inputs.source_commit }}
+          STORE_ARCH: ${{ matrix.arch }}
+        run: docker build --label "org.opencontainers.image.revision=$SOURCE_COMMIT" --label "org.opencontainers.image.version=$STORE_VERSION" --tag "ghcr.io/$GITHUB_REPOSITORY:$STORE_VERSION-$STORE_ARCH" .
+      - name: Qualify actual container and exhausted filesystem
+        env:
+          STORE_VERSION: ${{ needs.gate.outputs.version }}
+          STORE_ARCH: ${{ matrix.arch }}
+        run: node scripts/qualify-container.mjs "ghcr.io/$GITHUB_REPOSITORY:$STORE_VERSION-$STORE_ARCH" --disk-full --report artifacts/container-qualification.json
+      - name: Scan the complete image
+        env:
+          STORE_VERSION: ${{ needs.gate.outputs.version }}
+          STORE_ARCH: ${{ matrix.arch }}
+        run: |
+          docker save "ghcr.io/$GITHUB_REPOSITORY:$STORE_VERSION-$STORE_ARCH" --output artifacts/image.tar
+          mkdir -p artifacts/trivy-cache
+          docker run --rm --mount "type=bind,src=$PWD/artifacts,dst=/scan" --mount "type=bind,src=$PWD/artifacts/trivy-cache,dst=/root/.cache" aquasec/trivy@sha256:790fd66d1697395d8693d1acaa1ea702406a20f109b6fc7bac8db623eca6c06c image --input /scan/image.tar --scanners vuln --format json --output /scan/image-vulnerabilities.json
+          docker run --rm --mount "type=bind,src=$PWD/artifacts,dst=/scan" --mount "type=bind,src=$PWD/artifacts/trivy-cache,dst=/root/.cache" aquasec/trivy@sha256:790fd66d1697395d8693d1acaa1ea702406a20f109b6fc7bac8db623eca6c06c image --input /scan/image.tar --scanners vuln --severity HIGH,CRITICAL --ignore-unfixed --exit-code 1
+          rm artifacts/image.tar
+      - name: Authenticate to GitHub Container Registry
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: printf '%s' "$GH_TOKEN" | docker login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
+      - name: Publish qualified architecture
+        env:
+          STORE_VERSION: ${{ needs.gate.outputs.version }}
+          STORE_ARCH: ${{ matrix.arch }}
+        run: docker push "ghcr.io/$GITHUB_REPOSITORY:$STORE_VERSION-$STORE_ARCH"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: container-${{ matrix.arch }}-qualification
+          path: artifacts/*.json
+          if-no-files-found: error
+          retention-days: 30
+  manifest:
+    needs: [gate, images]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      packages: write
+    steps:
+      - name: Authenticate to GitHub Container Registry
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: printf '%s' "$GH_TOKEN" | docker login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
+      - name: Publish versioned multi-platform manifest
+        env:
+          STORE_VERSION: ${{ needs.gate.outputs.version }}
+        run: |
+          docker buildx imagetools create --tag "ghcr.io/$GITHUB_REPOSITORY:$STORE_VERSION" "ghcr.io/$GITHUB_REPOSITORY:$STORE_VERSION-amd64" "ghcr.io/$GITHUB_REPOSITORY:$STORE_VERSION-arm64"
+          docker buildx imagetools inspect "ghcr.io/$GITHUB_REPOSITORY:$STORE_VERSION"

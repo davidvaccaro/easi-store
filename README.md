@@ -4,7 +4,9 @@
 
 EASI Store is an independent server project in the EASI family. Import DICOM instances, find a patient or examination, browse its series, open an image, and exchange studies with configured DICOMweb or DIMSE archives. Original HTTP/file imports are preserved byte for byte; DIMSE preserves the transmitted dataset and creates Part 10 file metadata. The catalog is stored in SQLite and image objects live on disk.
 
-**Status: 0.6.0 source-available identity preview.** Local or organizational OpenID Connect sign-in, reader/contributor/administrator roles, revocable API credentials and deliberate local recovery accompany the existing archive workflows. The Datasets workspace provides saved cross-study series selections, technical review, immutable instance/hash manifests, optional patient-grouped train/validation/test splits, and verified Python downloads. Connected DICOMweb/DIMSE archives, durable transfers including C-GET/C-MOVE, metadata-first viewing, original-study ZIP exports, and confirmed study removal remain available. This is not stable 1.0, Orthanc feature parity, or a clinically/production-qualified PACS. [Current status](docs/STATUS.md), [research datasets](docs/AI_DATASETS.md), [DICOMweb](docs/DICOMWEB.md), and [DIMSE](docs/DIMSE.md) define the implemented profiles; [the backlog](docs/BACKLOG.md) records remaining work.
+**Status: 1.0.0-rc.1 source-available release candidate.** The first-release profile is a single-host archive for research, application development and explicitly authenticated shared deployments. Archive health adds live capacity admission, readiness and bounded original-integrity reviews to the existing library, DICOMweb/DIMSE exchange, embedded EASI View, reproducible datasets and local/OIDC identity workflows. This is a release candidate, not a claim of Orthanc feature parity, full DICOM conformance or clinical qualification. [Supported profile](docs/CONFORMANCE.md), [current status](docs/STATUS.md), and [candidate validation](docs/VALIDATION.md) define what is supported and tested.
+
+Use the [versioned release downloads](https://github.com/davidvaccaro/easi-store/releases/tag/v1.0.0-rc.1) for portable packages, checksums and dependency inventories. Portable packages bundle Node; extracting the matching package and opening **Start EASI Store** needs no separate Node installation. They are unsigned portable archives, not native signed installers. See [installation](docs/PACKAGING.md) and [security reporting](SECURITY.md).
 
 ## Start with Docker
 
@@ -14,11 +16,25 @@ Install [Docker Desktop](https://www.docker.com/products/docker-desktop/) or Doc
 docker compose up --build -d
 ```
 
+For the published image without a source build:
+
+```sh
+docker volume create easi-store-archive
+docker run -d --name easi-store --init --restart unless-stopped \
+  --read-only --tmpfs /tmp:size=64m,mode=1777 \
+  --cap-drop ALL --security-opt no-new-privileges \
+  --publish 127.0.0.1:8048:8048 \
+  --mount source=easi-store-archive,target=/data \
+  ghcr.io/davidvaccaro/easi-store:1.0.0-rc.1
+```
+
 Open **http://127.0.0.1:8048**. Create your own administrator account; there is no default password. The first-run screen may ask for the one-time local bootstrap token. Read it from your container:
 
 ```sh
 docker compose exec store cat /data/bootstrap-token
 ```
+
+For the standalone `docker run` example, use `docker exec easi-store cat /data/bootstrap-token` instead.
 
 The published port is restricted to your machine. The named `archive` volume holds the database, original instances, and configuration. `docker compose down` stops the service without deleting that volume. Do not add `--volumes` when stopping an archive you want to keep.
 

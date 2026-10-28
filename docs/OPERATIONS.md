@@ -47,7 +47,7 @@ docker compose ps
 docker compose logs --tail=100 store
 ```
 
-Use `node src/cli.js doctor` when invoking the CLI directly; `npm start` already selects the start command, so do not append a second command to it. A health response means the service answers requests, not that every stored object has recently been audited or restored from backup.
+Use `node src/cli.js doctor` when invoking the CLI directly; `npm start` already selects the start command, so do not append a second command to it. A health response means the service answers requests, not that every stored object has recently been audited or restored from backup. `GET /api/ready` reports current intake readiness separately. Administrators can inspect capacity, configure safeguards and run a bounded original-integrity review under **Administration → Archive health**; [HEALTH.md](HEALTH.md) documents thresholds, partial results and the offline `verify` command.
 
 Inspect the in-app Activity view for import outcomes. A duplicate is distinct from a stored new instance. An instance UID conflict requires an explicit operator decision; it is not silently repaired by replacing the earlier source.
 
@@ -132,7 +132,7 @@ Never install application files inside an archive directory or replace a data di
 
 ## Networked/production use
 
-The preview is a single-host development/research foundation. Publishing its HTTP port to a LAN or the internet is a distinct deployment task. Use authenticated mode for a network HTTP listener and protect credentials in transit with an appropriately configured HTTPS reverse proxy. DIMSE needs an explicit network bind and exact calling-AE/source-IP peers, with firewall and transport protection chosen for the environment. Those controls do not provide native DICOM TLS. Reverse-proxy trust qualification, backup/restore drills, retention, OIDC/RBAC/scoped service credentials, storage capacity/quotas, audit policy, and concurrent workload qualification have explicit backlog items. An administrator account and a healthcheck alone do not establish production readiness.
+The preview is a single-host development/research foundation. Publishing its HTTP port to a LAN or the internet is a distinct deployment task. Use authenticated mode for a network HTTP listener and protect credentials in transit with an appropriately configured HTTPS reverse proxy. DIMSE needs an explicit network bind and exact calling-AE/source-IP peers, with firewall and transport protection chosen for the environment. Those controls do not provide native DICOM TLS. The release includes the bounded OIDC/RBAC/service-credential profile, capacity safeguards and candidate-specific recovery/workload checks. Qualify the actual HTTPS topology, provider, workload and backup/restore procedure; managed retention, OS quotas and compliance audit policy remain separate work. An administrator account and a healthcheck alone do not establish production readiness.
 
 No analytics or external model service is built into this product. The separately embedded viewer uses the same-origin server connection to retrieve the images selected by the user. Importing transfers data to the configured Store server; it is not local-only file viewing.
 

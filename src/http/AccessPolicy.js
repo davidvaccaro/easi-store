@@ -23,11 +23,35 @@ export function isLoopbackAddress(value) {
     const address = normalizeAddress(value);
     return address === '::1' || address?.startsWith('127.') === true;
 }
-export function validateAccessPolicy(value, { host = '127.0.0.1', dimseHost = host } = {}) {
+function localAuthority(value) {
+    if (typeof value !== 'string' || !value || /[\s/@\\?#]/.test(value)) return false;
+    let url;
+    try { url = new URL(`http://${value}`); } catch { return false; }
+    const match = value.match(/^(?:\[([^\]]+)\]|([^:]+))(?::[0-9]+)?$/);
+    if (!match) return false;
+    const name = match[1] || match[2];
+    return name.toLowerCase() === 'localhost' || isLoopbackAddress(name);
+}
+function hostedDeployment({ publicUrl, hosted = false }) {
+    if (typeof hosted !== 'boolean') throw badRequest('The hosted deployment setting must be boolean.');
+    if (hosted) return true;
+    if (publicUrl === undefined) return false;
+    let url;
+    try { url = new URL(publicUrl); } catch { throw badRequest('Configure a valid public Store URL.'); }
+    return !localAuthority(url.host);
+}
+const proxyHeader = name => name === 'forwarded' || name === 'x-forwarded' || name.startsWith('x-forwarded-')
+    || ['via', 'x-real-ip', 'client-ip', 'x-client-ip', 'true-client-ip', 'cf-connecting-ip',
+        'fastly-client-ip', 'x-envoy-external-address', 'x-original-host', 'x-original-url'].includes(name);
+
+export function validateAccessPolicy(value, { host = '127.0.0.1', dimseHost = host, publicUrl, hosted = false } = {}) {
     if (!object(value) || !ownKeys(value, ['version', 'profile', 'dimse']) || value.version !== 1
         || !['authenticated', 'local-research'].includes(value.profile)) throw badRequest('Use a version 1 access policy with an authenticated or local-research profile.');
     if (value.profile === 'local-research' && (!isLoopbackAddress(host) || !isLoopbackAddress(dimseHost))) {
         throw badRequest('Local research access requires literal loopback HTTP and DIMSE listeners. Bind both to 127.0.0.1 or ::1.');
+    }
+    if (value.profile === 'local-research' && hostedDeployment({ publicUrl, hosted })) {
+        throw badRequest('Hosted or public Store deployments require authenticated client access. Use the authenticated access profile.');
     }
     const dimse = value.dimse;
     if (!object(dimse) || !ownKeys(dimse, ['allowLoopback', 'peers']) || typeof dimse.allowLoopback !== 'boolean'
@@ -47,9 +71,9 @@ export function validateAccessPolicy(value, { host = '127.0.0.1', dimseHost = ho
 }
 
 export class AccessPolicy {
-    constructor({ dataDir, host = '127.0.0.1', dimseHost = host }) {
+    constructor({ dataDir, host = '127.0.0.1', dimseHost = host, publicUrl, hosted = false }) {
         this.path = path.join(dataDir, 'access-policy.json'); this.dataDir = dataDir;
-        this.listeners = { host, dimseHost }; this.record = defaults(); this.updating = false;
+        this.listeners = { host, dimseHost, publicUrl, hosted }; this.record = defaults(); this.updating = false;
     }
     async open({ profile, dimse } = {}) {
         await mkdir(this.dataDir, { recursive: true, mode: 0o700 });
@@ -66,7 +90,13 @@ export class AccessPolicy {
     }
     snapshot() { return structuredClone(this.record); }
     allowsDicomweb(req) {
-        return this.record.profile === 'local-research' && isLoopbackAddress(req.socket.remoteAddress);
+        if (this.record.profile !== 'local-research' || hostedDeployment(this.listeners)
+            || !isLoopbackAddress(req.socket.remoteAddress)) return false;
+        const headers = req.headers || {};
+        if (!localAuthority(headers.host) || Object.keys(headers).some(name => proxyHeader(name.toLowerCase()))) return false;
+        // The fixed, read-only local EASI View bridge uses this path marker,
+        // never forwarding headers as evidence that a remote user is local.
+        return headers['x-easi-store-public-base'] === undefined || headers['x-easi-store-public-base'] === '/easi-store/dicomweb';
     }
     canAssociate({ callingAeTitle, remoteAddress }) {
         if (typeof callingAeTitle !== 'string' || !/^[\x20-\x7e]{1,16}$/.test(callingAeTitle)

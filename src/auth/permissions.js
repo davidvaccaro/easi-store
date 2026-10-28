@@ -2,7 +2,7 @@ import { httpError } from '../http/utils.js';
 
 const read = ['archive.read'];
 const contribute = [...read, 'archive.import', 'datasets.write'];
-const administer = [...contribute, 'archive.delete', 'connections.manage', 'transfers.manage', 'access.manage', 'identity.manage', 'activity.read'];
+const administer = [...contribute, 'archive.delete', 'connections.manage', 'transfers.manage', 'access.manage', 'identity.manage', 'health.manage', 'activity.read'];
 const roles = Object.freeze({ reader: Object.freeze(read), contributor: Object.freeze(contribute), administrator: Object.freeze(administer) });
 const UID = '[0-9.]+';
 const UUID = '[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}';
@@ -25,6 +25,10 @@ export function requiredPermissions(method, pathname) {
         || method === 'POST' && ['/api/v1/auth/tokens', '/api/v1/auth/password'].includes(pathname)
         || method === 'DELETE' && new RegExp(`^/api/v1/auth/tokens/${UUID}$`).test(pathname)) return ['identity.manage'];
     if (pathname === '/api/v1/access-policy' && (get || method === 'PUT')) return ['access.manage'];
+    if (pathname === '/api/v1/health' && get
+        || pathname === '/api/v1/health/settings' && method === 'PUT'
+        || pathname === '/api/v1/health/audits' && method === 'POST'
+        || new RegExp(`^/api/v1/health/audits/${UUID}$`).test(pathname) && (get || method === 'DELETE')) return ['health.manage'];
     if (pathname === '/api/v1/activity' && get) return ['activity.read'];
     if (pathname === '/api/v1/connections' && (get || method === 'POST')
         || new RegExp(`^/api/v1/connections/${UUID}$`).test(pathname) && ['PUT', 'DELETE'].includes(method)

@@ -1,6 +1,6 @@
-# DICOMweb implemented profile — 0.6.0
+# DICOMweb implemented profile — 1.0.0-rc.1
 
-EASI Store implements the core archive transactions plus bounded metadata and pixel retrieval. The target is eventual broad support for the released normative standard, implemented in explicit phases. The current 0.6.0 profile is a **documented subset**, not a declaration of full PS3.18 or complete Studies Service conformance.
+EASI Store implements the core archive transactions plus bounded metadata and pixel retrieval. The target is eventual broad support for the released normative standard, implemented in explicit phases. The current release-candidate profile is a **documented subset**, not a declaration of full PS3.18 or complete Studies Service conformance.
 
 Reference baseline: [DICOM PS3.18, Web Services](https://dicom.nema.org/medical/dicom/current/output/chtml/part18/PS3.18.html), released 2026d when this implementation was started. A future release must pin/review its baseline rather than assume the `current` URL stays unchanged.
 
@@ -8,7 +8,7 @@ Base URL: `http://127.0.0.1:8048/dicomweb`.
 
 ## Transaction matrix
 
-| Transaction/resource | Implemented 0.6.0 profile |
+| Transaction/resource | Implemented first-release profile |
 | --- | --- |
 | QIDO studies | Supported: `GET /studies` |
 | QIDO series within a study | Supported: `GET /studies/{study}/series` |
@@ -82,6 +82,13 @@ Direct queries retain DICOM matching semantics: `PatientName=Synthetic` is a who
 ## Store an original instance
 
 STOW uses MIME parts, not HTML `multipart/form-data`. This Node 24 example streams a local instance without concatenating its pixel data into a second in-memory copy. Authenticate through the browser/command-line flow and supply its cookie value privately through `EASI_STORE_COOKIE`; never put a real token in source control.
+
+Multipart boundaries normally follow RFC 2046's 70-character limit. The
+independently tested Orthanc DICOMweb 1.19 client emits a 73-character delimiter
+formed by the same canonical UUID twice, separated by a hyphen. Store accepts
+only that fixed-size compatibility exception; arbitrary overlong boundaries,
+different UUID pairs, control characters and existing request/header/part limits
+remain rejected. This peer accommodation is not a broader MIME conformance claim.
 
 ```js
 import { createReadStream } from 'node:fs';

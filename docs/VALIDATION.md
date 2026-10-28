@@ -2,6 +2,90 @@
 
 Validation uses independently generated DICOM fixtures. Original imaging collections are not part of the source, build, test suite, or artifacts.
 
+## First-release readiness — 1.0.0-rc.1, 2026-10-28
+
+The integrated candidate passed **304 synthetic tests**, source-asset checks,
+TypeScript, the production UI build and all 64 distribution hashes on macOS
+ARM64/Node 24.22.1. Forty-four new cases cover shared capacity admission, actual-write
+failure mapping, bounded/cancellable audits, malformed persisted state, hosted
+access, health HTTP/CLI authorization and the corpus qualification harness.
+
+Disposable Chrome passed **13 Archive health checks** with generated originals:
+revisioned safeguards, stale updates, readiness distinct from liveness, preserved
+original bytes, real missing/corrupt/orphan/unsafe findings, hash-vs-inventory
+mode, cancellation/partial results, polling cleanup and 390 px layout. No runtime
+or console errors occurred. The existing identity/dataset suites remain covered
+by their separate earlier workflow evidence and current native portable gates.
+
+A real **Keycloak 26.8.1** server behind **Caddy 2.11.7 HTTPS** passed ten generated
+realm/browser checks: actual code/PKCE/RS256/Basic login for Reader, Contributor
+and Administrator, exact group permissions and original hashes, QIDO/import/admin
+boundaries, unmapped denial, all logout flows and Secure/HttpOnly/SameSite cookies.
+CA verification remains enabled; an untrusted connection fails. Anonymous and
+forwarded-spoofed requests remain 401, bad Host/foreign Origin 403 and a hosted
+research downgrade 400. No system trust setting, real tenant or user archive was
+changed; synthetic containers/networks/profiles were removed. Entra ID and Okta
+remain configuration recipes, not live-tenant qualification.
+
+The reusable mixed-workload qualification drove **160 generated originals** with
+four concurrent import workers, 650 query passes and 643 exact-original SHA reads.
+A hard kill during a filesystem-observed unfinished upload was followed by
+restart: all 160 acknowledged objects and hashes remained, and the partial import
+was not indexed. A separate offline full backup/restore retained the hashes,
+local login, Reader scope and revoked credential state; a restored full integrity
+review reported no findings. This local run took about 15 seconds; it is bounded
+recovery evidence, not a general throughput or concurrency guarantee.
+
+The full explicitly local corpus run examined **26,162 files**: 16,143 unique
+instances stored and retrieved byte-identically, 235 byte-identical duplicates,
+7,485 explicit UID/hierarchy/patient conflicts,104 rejected inputs and 2,195 files
+without a supported Part10 prefix. There were no request/integrity failures.
+The final full SHA review checked all 16,143 retained originals / 3,060,724,102 bytes
+with zero missing, corrupt, unreferenced, unsafe or unreadable objects. The
+approximately 12-minute run includes upload/query/download hashing and duplicate/
+conflict cases, not viewer-rendering validation. Original inputs were opened
+read-only, the disposable archive was removed, and per-file reports remain
+private outside published source/artifacts. A rejected/conflicting file is not
+silently treated as a successful archival import.
+
+The Linux ARM64 production container passed **seven runtime/recovery groups**
+with nonroot UID 10001, a read-only root, a private persistent volume and no Python.
+The separate 64 MiB constrained tmpfs exercise acknowledged 52 generated originals,
+reached the live intake guard, then forced actual OS ENOSPC with an unrelated
+bounded filler. Readiness returned 503, liveness 200 and an auditable import 507.
+After clearing only that filler and restarting the Store process in the same
+container, all 52 original hashes and the full integrity review passed. A normal
+private-volume container restart separately retained settings, audit reports,
+roles and revocation. Temporary containers/volumes were removed.
+Final npm/yarn-free image ID:
+`sha256:bb21757e52425ec45237ae3025be5a90608e9c04ac1c2a8b400c8748e0009b3d`.
+All 123 application/runtime-input files matched the qualified stage exactly
+(payload SHA-256 `9e5f7715c251811d87c43842f951dc773d4db1e78d1e7d61fa22966667d5d28e`).
+The volatile tmpfs exercise qualifies process recovery under storage pressure;
+it is not a claim of persistence across a container/power loss on tmpfs.
+
+Independent Orthanc 1.12.8 with DICOMweb 1.19 passed 12 protocol groups using
+only generated data: Verification both ways; Store SCP C-STORE, C-FIND at study/
+series/image levels, C-GET and C-MOVE; Store SCU storage/find/durable get; explicit
+low-space receiving failure; and authenticated QIDO/STOW/WADO both directions.
+HTTP Part10 bytes and DIMSE encoded datasets are checked separately. This found
+and fixed a narrowly recognized Orthanc 73-character repeated-UUID multipart
+boundary exception, covered by four regressions without relaxing ordinary MIME
+or resource bounds. The separate correlated move check retained whole-study,
+series, instance, duplicate and missing-destination coverage. Existing user
+Orthanc/configuration/storage were untouched; disposable servers were removed.
+
+The final image's npm/application audit and pinned Trivy scan pass the policy
+of no fixable HIGH/CRITICAL findings. Full retained reports include vendor-
+unfixed/deferred Debian findings; [SECURITY_NOTES.md](SECURITY_NOTES.md) records
+that boundary and the unused package-manager removal. The release is not claimed
+to be vulnerability-free.
+
+Candidate-specific native release artifacts and publication receipts are
+recorded separately below as their publication gates complete.
+These results qualify the [declared first-release profile](CONFORMANCE.md),
+not arbitrary PACS topologies, every stored object's rendering or clinical use.
+
 ## Local identity and OIDC — 0.6.0 preview, 2026-10-28
 
 The integrated candidate passed **260 synthetic tests**, source-asset checks,

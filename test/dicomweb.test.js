@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
 import { once } from 'node:events';
 import { Readable } from 'node:stream';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { Archive } from '../src/archive/Archive.js';
 import { handleDicomweb } from '../src/dicomweb/router.js';
 import { RelatedReader } from '../src/dicomweb/multipart.js';
@@ -139,4 +139,19 @@ test('unchanged transfer syntax is explicit; default and unsupported transcoding
   assert.equal((await fetch(url, { headers: { Accept: 'application/dicom' } })).status, 406);
   assert.equal((await fetch(url, { headers: { Accept: 'multipart/related; type="application/dicom"; transfer-syntax=1.2.840.10008.1.2' } })).status, 406);
   assert.equal((await fetch(url, { headers: { Accept: 'multipart/related; type="application/dicom"; transfer-syntax=*;q=0' } })).status, 406);
+});
+
+test('Orthanc repeated-UUID73-byte STOW delimiter preserves the complete original while arbitrary overlong boundaries stay rejected', async t => {
+  const { archive,base } = await fixture(t), identity={studyUid:uid(),seriesUid:uid(),sopUid:uid()}, bytes=createDicom(identity);
+  const uuid='126ac881-862d-4d35-a39a-76159c2b8e79',boundary=`${uuid}-${uuid}`,encoded=related([bytes],boundary);
+  const response=await fetch(`${base}/studies`,{method:'POST',headers:{'Content-Type':`multipart/related; type="application/dicom"; boundary=${boundary}`,Accept:'application/dicom+json'},
+    body:Readable.from(Array.from({length:Math.ceil(encoded.length/257)},(_,index)=>encoded.subarray(index*257,(index+1)*257))),duplex:'half'});
+  assert.equal(response.status,200);
+  assert.equal((await response.json())['00081199'].Value[0]['00081155'].Value[0],identity.sopUid);
+  assert.deepEqual(await readFile(archive.getInstance(identity.studyUid,identity.seriesUid,identity.sopUid).path),bytes);
+  for(const invalid of ['x'.repeat(71),`${uuid}-126ac881-862d-4d35-a39a-76159c2b8e70`]){
+    const rejected=await fetch(`${base}/studies`,{method:'POST',headers:{'Content-Type':`multipart/related;type="application/dicom";boundary="${invalid}"`},body:related([bytes],invalid)});
+    assert.equal(rejected.status,415);await rejected.body?.cancel();
+  }
+  assert.equal(archive.stats().instances,1);
 });

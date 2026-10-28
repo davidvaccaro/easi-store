@@ -34,6 +34,7 @@ export function auditAction(method, pathname) {
     if (pathname === '/api/v1/auth/oidc/callback') return 'identity.sso-callback';
     if (pathname.startsWith('/api/v1/auth/')) return `identity.${method.toLowerCase()}`;
     if (pathname.startsWith('/api/v1/access-policy')) return `access.${method.toLowerCase()}`;
+    if (pathname.startsWith('/api/v1/health')) return `health.${method.toLowerCase()}`;
     if (pathname.startsWith('/api/v1/connections')) return `connections.${method.toLowerCase()}`;
     if (pathname.startsWith('/api/v1/jobs')) return `transfers.${method.toLowerCase()}`;
     if (pathname.startsWith('/api/v1/datasets')) return `datasets.${method.toLowerCase()}`;

@@ -47,6 +47,31 @@ async function sha256(location) {
   return hash.digest('hex');
 }
 
+async function createSbom(directory, manifest) {
+  const arguments_ = ['sbom', '--package-lock-only', '--omit=dev', '--sbom-format=cyclonedx'];
+  const npmScript = process.env.npm_execpath?.endsWith('npm-cli.js') ? process.env.npm_execpath : null;
+  const command = npmScript ? process.execPath : process.platform === 'win32' ? 'cmd.exe' : 'npm';
+  const args = npmScript ? [npmScript, ...arguments_] : process.platform === 'win32' ? ['/d', '/s', '/c', 'npm sbom --package-lock-only --omit=dev --sbom-format=cyclonedx'] : arguments_;
+  const output = await new Promise((resolve, reject) => {
+    let content = '', failed = false;
+    const child = spawn(command, args, { cwd: directory, stdio: ['ignore', 'pipe', 'ignore'], shell: false });
+    child.stdout.on('data', bytes => {
+      content += bytes.toString('utf8');
+      if (content.length > 16 * 1024 * 1024 && !failed) { failed = true; child.kill(); reject(new Error('Runtime dependency inventory exceeded its limit.')); }
+    });
+    child.once('error', reject);
+    child.once('close', code => { if (!failed) code === 0 ? resolve(content) : reject(new Error('Runtime dependency inventory generation failed.')); });
+  });
+  const document = JSON.parse(output);
+  if (document.bomFormat !== 'CycloneDX' || document.metadata?.component?.['bom-ref'] !== `${manifest.name}@${manifest.version}` || document.metadata?.component?.version !== manifest.version) throw new Error('Runtime dependency inventory does not identify this release.');
+  // npm uses the physical directory name for the root component. Identify the
+  // packaged application instead while preserving its package ref/dependency graph.
+  document.metadata.component.name = manifest.name.split('/').at(-1);
+  if (manifest.name.startsWith('@')) document.metadata.component.group = manifest.name.split('/')[0];
+  document.metadata.component.type = 'application';
+  await writeFile(path.join(directory, 'SBOM.cdx.json'), JSON.stringify(document, null, 2) + '\n');
+}
+
 export function checksumFor(manifest, filename) {
   const line = manifest.split(/\r?\n/).find(item => item.trim().split(/\s+/).at(-1)?.replace(/^\*/, '') === filename);
   const checksum = line?.split(/\s+/)[0];
@@ -89,10 +114,16 @@ async function installRuntime(options, bundle, scratch) {
   else await run('tar', ['-xf', downloadPath, '-C', scratch], scratch);
   const runtime = path.join(bundle, 'runtime');
   await mkdir(runtime);
-  // The complete verified distribution retains Node's third-party licenses.
+  // Retain the verified runtime and its licenses; unused package-manager tools
+  // are not needed by the complete application bundle and add patch surface.
   await cp(path.join(scratch, directory), runtime, { recursive: true, verbatimSymlinks: true });
+  for (const relative of ['lib/node_modules/npm', 'lib/node_modules/corepack', 'node_modules/npm', 'node_modules/corepack',
+    'bin/npm', 'bin/npx', 'bin/corepack', 'npm', 'npm.cmd', 'npm.ps1', 'npx', 'npx.cmd', 'npx.ps1', 'corepack', 'corepack.cmd', 'corepack.ps1']) {
+    await rm(path.join(runtime, relative), { recursive: true, force: true });
+  }
   await cp(manifestPath, path.join(runtime, 'SHASUMS256.txt'));
-  return { version: options.nodeVersion, target: options.target, source: `${releaseBase}/${filename}`, sha256: actual, verification: 'SHA-256 against the exact release manifest downloaded over HTTPS; release signature not verified' };
+  return { version: options.nodeVersion, target: options.target, source: `${releaseBase}/${filename}`, sha256: actual,
+    packageManagersIncluded: false, verification: 'Official distribution SHA-256 verified before omitting unused npm/npx/corepack tools; final files inventoried; release signature not verified' };
 }
 
 async function inventory(directory, prefix = '') {
@@ -129,7 +160,7 @@ export async function packagePortable(options) {
     const staging = path.join(scratch, 'staging');
     const bundle = path.join(staging, packageName);
     await mkdir(bundle, { recursive: true });
-    for (const filename of ['src', 'dist', 'package.json', 'package-lock.json', 'LICENSE', 'NOTICE', 'licenses', 'README.md', 'CHANGELOG.md', 'docs', 'examples']) {
+    for (const filename of ['src', 'dist', 'package.json', 'package-lock.json', 'LICENSE', 'NOTICE', 'SECURITY.md', 'licenses', 'README.md', 'CHANGELOG.md', 'docs', 'examples']) {
       const source = path.join(projectRoot, filename);
       if (!await exists(source)) throw new Error(`Required release input is missing: ${filename}`);
       await cp(source, path.join(bundle, filename), { recursive: true,
@@ -146,6 +177,7 @@ export async function packagePortable(options) {
     if (process.env.npm_execpath?.endsWith('npm-cli.js')) await run(process.execPath, [process.env.npm_execpath, ...npmArguments], bundle);
     else if (process.platform === 'win32') await run('cmd.exe', ['/d', '/s', '/c', 'npm ci --omit=dev --ignore-scripts --no-audit --no-fund'], bundle);
     else await run('npm', npmArguments, bundle);
+    await createSbom(bundle, manifest);
     const dependencies = await inventory(path.join(bundle, 'node_modules'));
     if (options.target !== `${process.platform}-${process.arch}` && dependencies.some(item => item.path.endsWith('.node'))) {
       throw new Error('Native npm dependencies require packaging on the target platform; cross-target artifact refused.');

@@ -8,6 +8,7 @@ import { join, resolve, dirname } from 'node:path';
 import { extractMetadata } from './metadata.js';
 import { ArchiveError, validUid } from './errors.js';
 import { StudyDeletion } from './StudyDeletion.js';
+import { HealthService } from '../health/HealthService.js';
 
 export { ArchiveError } from './errors.js';
 
@@ -49,15 +50,16 @@ function recordError(record, message, code) {
 const columns = ['id', 'studyUid', 'seriesUid', 'sopUid', 'sopClassUid', 'transferSyntaxUid', 'modality', 'patientName', 'patientId', 'issuer', 'patientKey', 'studyDate', 'studyDescription', 'seriesDescription', 'seriesNumber', 'instanceNumber', 'frames', 'rows', 'columns', 'bytes', 'sha256', 'objectKey', 'metadata', 'source', 'createdAt'];
 
 export class Archive {
-  static async open({ dataDir, maxInstanceBytes = 536870912 }) {
+  static async open({ dataDir, maxInstanceBytes = 536870912, healthOptions = {} }) {
     if (!dataDir) throw new Error('Archive dataDir is required.');
     if (!Number.isSafeInteger(maxInstanceBytes) || maxInstanceBytes < 132) throw new Error('Invalid maxInstanceBytes.');
-    const archive = new Archive(resolve(dataDir), maxInstanceBytes);
+    const archive = new Archive(resolve(dataDir), maxInstanceBytes, healthOptions);
     await archive.initialize();
     return archive;
   }
 
-  constructor(dataDir, maxInstanceBytes) {
+  constructor(dataDir, maxInstanceBytes, healthOptions = {}) {
+    this.healthOptions = healthOptions;
     this.dataDir = dataDir;
     this.maxInstanceBytes = maxInstanceBytes;
     this.queue = Promise.resolve();
@@ -133,6 +135,8 @@ export class Archive {
         this.db.exec('PRAGMA user_version=3; COMMIT');
       } catch (error) { this.db.exec('ROLLBACK'); throw error; }
       await this.recover();
+      this.health = new HealthService({ ...this.healthOptions,archive:this });
+      await this.health.initialize();
     } catch (error) { await this.close(); throw error; }
   }
 
@@ -191,9 +195,14 @@ export class Archive {
 
   async ingest(readable, options = {}) {
     this.assertAvailableForMutation();
+    const release = this.health.acquireIntake();
     const operation = this.performIngest(readable, options);
     this.operations.add(operation);
-    try { return await operation; } finally { this.operations.delete(operation); }
+    try { return await operation; }
+    catch (error) {
+      if (['ENOSPC','EDQUOT'].includes(error.code)) throw new ArchiveError('The archive filesystem has insufficient storage. The instance was not acknowledged.',507,'insufficient-storage');
+      throw error;
+    } finally { this.operations.delete(operation); release(); }
   }
 
   async performIngest(readable, { source = 'upload', expectedStudyUid, expectedSeriesUid, expectedSopUid, expectedSopClassUid } = {}) {
@@ -203,7 +212,7 @@ export class Archive {
     let journalPath;
     let bytes = 0;
     let persisted = false;
-    const handle = await open(spool, 'wx', 0o600);
+    const handle = await this.health.writeChunk(0,() => open(spool, 'wx', 0o600));
     const hash = createHash('sha256');
     try {
       try {
@@ -213,7 +222,10 @@ export class Archive {
           if (bytes > this.maxInstanceBytes) throw new ArchiveError('The DICOM instance exceeds the configured upload limit.', 413, 'instance-too-large');
           hash.update(chunk);
           // writeFile on FileHandle advances its offset and handles short writes.
-          await handle.writeFile(chunk);
+          for (let offset = 0; offset < chunk.length; offset += this.health.limits.chunkBytes) {
+            const part = chunk.subarray(offset,offset+this.health.limits.chunkBytes);
+            await this.health.writeChunk(part.length,() => handle.writeFile(part));
+          }
         }
         await handle.sync();
       } finally { await handle.close(); }
@@ -254,7 +266,7 @@ export class Archive {
         await syncDirectory(join(this.dataDir, 'journal'));
         return { status: 'stored', instance: this.publicRecord(record) };
       };
-      const committed = this.queue.then(commit);
+      const committed = this.queue.then(() => this.health.writeChunk(0,commit));
       this.queue = committed.catch(() => {});
       return await committed;
     } finally {
@@ -375,6 +387,7 @@ export class Archive {
     this.closing = true;
     await Promise.allSettled([...this.operations]);
     await this.queue;
+    await this.health?.close();
     if (this.importReservations.size) await new Promise(resolve => { this.importsDrained = resolve; });
     if (this.readLeases.size) await new Promise(resolve => { this.readsDrained = resolve; });
     if (this.db) { try { this.db.exec('PRAGMA wal_checkpoint(TRUNCATE)'); } finally { this.db.close(); this.db = null; } }

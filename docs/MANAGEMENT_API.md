@@ -1,4 +1,4 @@
-# Management API preview — 0.6.0
+# Management API — 1.0.0-rc.1
 
 These endpoints belong to EASI Store, separately from `/dicomweb`. They power the browser interface and are versioned under `/api/v1`. Archive reads and writes require an authorized local/OIDC session or role-bound Store Bearer credential in both client access profiles. Explicit discovery/bootstrap routes remain public.
 
@@ -30,6 +30,10 @@ Unknown management mutations fail closed. HEAD/OPTIONS do not bypass route permi
 | GET / POST | `/auth/tokens` | Administrator-only `{items}` metadata list / create `{label,role,expiresInDays}`; `201` returns `{token,credential}` once |
 | DELETE | `/auth/tokens/{id}` | Administrator-only immediate revocation for subsequent requests; `{revoked:true}` |
 | POST | `/auth/password` | Local administrator session only; `{currentPassword,newPassword}`; success invalidates prior local sessions/API credentials and requires reauthentication |
+| GET | `/health` | Administrator-only capacity, readiness, catalog check and latest integrity review |
+| PUT | `/health/settings` | Administrator-only `{revision,reserveBytes,warningBytes,maxConcurrentImports}`; stale revision returns 409 |
+| POST | `/health/audits` | Administrator-only `{verifyHashes:true}` (or false for inventory); 202 returns a bounded report |
+| GET / DELETE | `/health/audits/{id}` | Administrator-only latest report / cancel review without changing originals |
 | GET | `/summary` | Patient/study/series/instance counts and original byte total |
 | GET | `/studies?search=&limit=100&offset=0` | `{items,total}`; literal free-text search and stable pagination |
 | GET | `/studies/{studyUid}/series` | `{items}` of series summaries |

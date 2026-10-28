@@ -110,6 +110,11 @@ export function parseRelatedType(value = '') {
   const type = value.match(/^multipart\/related(?:\s*;|\s*$)/i);
   const boundary = value.match(/;\s*boundary\s*=\s*(?:"([^"\r\n]+)"|([^;\s]+))/i)?.slice(1).find(Boolean);
   const partType = value.match(/;\s*type\s*=\s*(?:"([^"\r\n]+)"|([^;\s]+))/i)?.slice(1).find(Boolean);
-  if (!type || !boundary || boundary.length > 70 || !/^[0-9A-Za-z'()+_,\-./:=? ]+$/.test(boundary) || boundary.endsWith(' ') || partType?.toLowerCase() !== 'application/dicom') throw new ArchiveError('STOW requires multipart/related; type="application/dicom" with a valid boundary.', 415, 'unsupported-media-type');
+  // Orthanc DICOMweb 1.19 uses a repeated canonical UUID separated by '-'.
+  // Its 73-byte delimiter exceeds RFC 2046's 70-byte limit. Retain
+  // that strict ordinary bound and admit only this independently qualified,
+  // fixed-size compatibility pattern; all parser resource bounds still apply.
+  const orthancBoundary = boundary?.length === 73 && /^([0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12})-\1$/.test(boundary);
+  if (!type || !boundary || boundary.length > 70 && !orthancBoundary || !/^[0-9A-Za-z'()+_,\-./:=? ]+$/.test(boundary) || boundary.endsWith(' ') || partType?.toLowerCase() !== 'application/dicom') throw new ArchiveError('STOW requires multipart/related; type="application/dicom" with a valid boundary.', 415, 'unsupported-media-type');
   return boundary;
 }

@@ -26,7 +26,7 @@ function parseArgs(args) {
     const values = { command: args.shift() || 'start' };
     while (args.length) {
         const key = args.shift();
-        if (['--open', '--no-dimse'].includes(key)) values[key.slice(2)] = true;
+        if (['--open', '--no-dimse', '--hosted', '--inventory-only'].includes(key)) values[key.slice(2)] = true;
         else if (['--data-dir', '--host', '--port', '--output', '--input', '--dimse-port', '--ae-title', '--public-url', '--label', '--credentials-file', '--access-profile', '--dimse-peers-file', '--dimse-host', '--auth-config', '--password-file'].includes(key) && args[0] && !args[0].startsWith('--')) values[key.slice(2)] = args.shift();
         else throw new Error(`Unknown or incomplete option: ${key}`);
     }
@@ -78,6 +78,23 @@ export async function main(args = process.argv.slice(2)) {
             architecture: process.arch, dataDir, dataExists: existsSync(dataDir), uiBuilt: existsSync(fileURLToPath(new URL('../dist/public/index.html', import.meta.url))),
             dicomweb: 'QIDO/STOW/originals + nested metadata/frame/bulk retrieval', dimse: 'C-ECHO / durable C-STORE / C-FIND / C-GET / configured C-MOVE', productionQualified: false }, null, 2)); return;
     }
+    if (o.command === 'verify') {
+        if (!existsSync(path.join(dataDir, 'catalog.sqlite'))) throw new Error('Choose an existing archive with a catalog.sqlite file.');
+        if (o.output && (path.resolve(o.output) === dataDir || path.resolve(o.output).startsWith(dataDir + path.sep))) throw new Error('Write the verification report outside the archive directory.');
+        const archive = await Archive.open({ dataDir });
+        try {
+            let report = await archive.health.startAudit({ verifyHashes: !o['inventory-only'] });
+            while (report.status === 'running') {
+                await new Promise(resolve => setTimeout(resolve, 50));
+                report = archive.health.getAudit(report.id);
+            }
+            const text = JSON.stringify(report, null, 2) + '\n';
+            if (o.output) await writeFile(path.resolve(o.output), text, { flag: 'wx', mode: 0o600 });
+            console.log(text.trimEnd());
+            if (report.status !== 'completed' || Object.values(report.counts).some(value => value > 0)) process.exitCode = 1;
+        } finally { await archive.close(); }
+        return;
+    }
     if (o.command === 'token') {
         const archive = await Archive.open({ dataDir });
         try {
@@ -121,7 +138,7 @@ export async function main(args = process.argv.slice(2)) {
         if (!o.input) throw new Error('Provide --input with a verified backup directory and --data-dir with a new destination.');
         if (existsSync(dataDir)) throw new Error('Restore destination must not exist.');
         const input = path.resolve(o.input), manifest = JSON.parse(await readFile(path.join(input, 'backup-manifest.json'), 'utf8'));
-        if (manifest.product !== 'EASI Store' || !['0.1.0', '0.2.0', '0.2.1', '0.3.0', '0.4.0', '0.5.0', VERSION].includes(manifest.version) || !Array.isArray(manifest.files)) throw new Error('Unsupported backup manifest.');
+        if (manifest.product !== 'EASI Store' || !['0.1.0', '0.2.0', '0.2.1', '0.3.0', '0.4.0', '0.5.0', '0.6.0', VERSION].includes(manifest.version) || !Array.isArray(manifest.files)) throw new Error('Unsupported backup manifest.');
         for (const file of manifest.files) {
             const p = path.resolve(input, file.path);
             if (!p.startsWith(input + path.sep) || (await stat(p)).size !== file.bytes || await fileHash(p) !== file.sha256) throw new Error('Backup integrity verification failed.');
@@ -136,7 +153,7 @@ export async function main(args = process.argv.slice(2)) {
         try { console.log(`Restored ${archive.stats().instances} instances; integrity verified.`); } finally { await archive.close(); }
         return;
     }
-    if (o.command !== 'start') throw new Error('Commands: start, doctor, demo, token, reset-password, backup, restore.');
+    if (o.command !== 'start') throw new Error('Commands: start, doctor, verify, demo, token, reset-password, backup, restore.');
     const host = o.host || process.env.EASI_STORE_HOST || '127.0.0.1';
     const dimseHost = o['dimse-host'] || process.env.EASI_STORE_DIMSE_HOST || (isLoopbackAddress(host) ? host : '127.0.0.1');
     const port = portNumber(o.port || process.env.EASI_STORE_PORT || 8048, 'HTTP port');
@@ -159,7 +176,9 @@ export async function main(args = process.argv.slice(2)) {
     // Resume persisted jobs only after the optional receiving AE has attached.
     const authFile = o['auth-config'] || process.env.EASI_STORE_AUTH_CONFIG;
     const authConfiguration = authFile ? await privateJson(authFile, 'authentication configuration') : undefined;
-    const app = await createStoreServer({ dataDir, host, port, authConfiguration, publicUrl: o['public-url'] || process.env.EASI_STORE_PUBLIC_URL, credentials, accessProfile, dimsePolicy, dimseHost, autoStartJobs: false });
+    if (process.env.EASI_STORE_HOSTED !== undefined && !['true', 'false'].includes(process.env.EASI_STORE_HOSTED)) throw new Error('EASI_STORE_HOSTED must be true or false.');
+    const hosted = Boolean(o.hosted || process.env.EASI_STORE_HOSTED === 'true');
+    const app = await createStoreServer({ dataDir, host, port, authConfiguration, hosted, publicUrl: o['public-url'] || process.env.EASI_STORE_PUBLIC_URL, credentials, accessProfile, dimsePolicy, dimseHost, autoStartJobs: false });
     let dimse;
     try {
         await app.listen();

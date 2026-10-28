@@ -2,7 +2,7 @@ name: easi-store
 services:
   store:
     build: .
-    image: easi-store:0.6.0-preview
+    image: ghcr.io/davidvaccaro/easi-store:1.0.0-rc.1
     init: true
     ports:
       - "127.0.0.1:8048:8048"

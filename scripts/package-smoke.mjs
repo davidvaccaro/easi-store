@@ -2,7 +2,7 @@
 // Execute only on an artifact produced by this checkout's trusted packager.
 import { createHash, randomBytes } from 'node:crypto';
 import { createReadStream } from 'node:fs';
-import { access, mkdir, mkdtemp, readFile, readdir, rm, stat, symlink, writeFile } from 'node:fs/promises';
+import { access, lstat, mkdir, mkdtemp, readFile, readdir, rm, stat, symlink, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { tmpdir } from 'node:os';
 import { spawn } from 'node:child_process';
@@ -39,6 +39,40 @@ function run(command, args, options = {}) {
 async function checkedJson(response, expectedStatus = 200) {
   if (response.status !== expectedStatus) { await response.body?.cancel(); throw new Error(`Portable API expected HTTP ${expectedStatus}, received ${response.status}.`); }
   return response.json();
+}
+async function completedHealthAudit(base, cookie, id, instances, bytes) {
+  for (let attempt = 0; attempt < 100; attempt++) {
+    const report = await checkedJson(await fetch(`${base}/api/v1/health/audits/${id}`, {headers:{Cookie:cookie}}));
+    if (report.status !== 'running') {
+      if (report.status !== 'completed' || report.verifyHashes !== true || report.progress.indexed !== instances || report.progress.bytes !== bytes || Object.values(report.counts).some(value => value !== 0) || report.findings.length || report.findingsTruncated) throw new Error('Portable full integrity review did not verify every unchanged original.');
+      return report;
+    }
+    await delay(100);
+  }
+  throw new Error('Portable full integrity review did not complete in time.');
+}
+async function publicHealth(base, ready, version) {
+  const live = await checkedJson(await fetch(`${base}/api/health`));
+  const readiness = await checkedJson(await fetch(`${base}/api/ready`), ready ? 200 : 503);
+  if (live.status !== 'ok' || live.version !== version || readiness.ready !== ready || readiness.version !== version || Object.keys(readiness).sort().join(',') !== 'ready,version') throw new Error('Portable liveness or minimal readiness response is incorrect.');
+}
+async function packagedSupplyChain(bundle, inventory) {
+  const application = JSON.parse(await readFile(path.join(bundle, 'package.json'), 'utf8'));
+  const sbom = JSON.parse(await readFile(path.join(bundle, 'SBOM.cdx.json'), 'utf8'));
+  const root = sbom.metadata?.component;
+  const fullName = root?.group ? `${root.group}/${root.name}` : root?.name;
+  if (sbom.bomFormat !== 'CycloneDX' || root?.type !== 'application' || fullName !== application.name || root.version !== inventory.version || root['bom-ref'] !== `${application.name}@${inventory.version}` || application.version !== inventory.version) throw new Error('Portable CycloneDX inventory does not identify the packaged release.');
+  for (const name of Object.keys(application.dependencies || {})) {
+    const installed = JSON.parse(await readFile(path.join(bundle, 'node_modules', name, 'package.json'), 'utf8'));
+    if (!sbom.components?.some(item => (item.group ? `${item.group}/${item.name}` : item.name) === name && item.version === installed.version)) throw new Error(`Portable CycloneDX inventory omitted a runtime dependency: ${name}.`);
+  }
+  if (!sbom.dependencies?.some(item => item.ref === root['bom-ref']) || !(await readFile(path.join(bundle, 'SECURITY.md'), 'utf8')).trim()) throw new Error('Portable security guidance or root dependency graph is missing.');
+  if (inventory.runtime.packageManagersIncluded !== false) throw new Error('Portable runtime did not declare package-manager omission.');
+  for (const relative of ['lib/node_modules/npm','lib/node_modules/corepack','node_modules/npm','node_modules/corepack','bin/npm','bin/npx','bin/corepack','npm','npm.cmd','npm.ps1','npx','npx.cmd','npx.ps1','corepack','corepack.cmd','corepack.ps1']) {
+    try { await lstat(path.join(bundle, 'runtime', relative)); }
+    catch (error) { if (error.code === 'ENOENT') continue; throw error; }
+    throw new Error(`Portable runtime retained an unused package manager: ${relative}.`);
+  }
 }
 async function singlePart(response, expectedLocation) {
   if (response.status !== 200) throw new Error(`Portable frame/bulk retrieval failed: ${response.status}.`);
@@ -189,6 +223,7 @@ try {
     const location = path.resolve(bundle, file.path);
     if (!location.startsWith(bundle + path.sep) || (await stat(location)).size !== file.bytes || await digest(location) !== file.sha256) throw new Error(`Artifact inventory mismatch: ${file.path}`);
   }
+  await packagedSupplyChain(bundle, manifest);
   const runtime = process.platform === 'win32' ? path.join(bundle, 'runtime/node.exe') : path.join(bundle, 'runtime/bin/node');
   const runtimeVersion = await run(runtime, ['--version']);
   if (runtimeVersion !== `v${manifest.runtime.version}`) throw new Error('Bundled runtime version does not match its manifest.');
@@ -279,6 +314,18 @@ try {
   if (contributed.status !== 'duplicate') throw new Error('Portable contributor did not retain duplicate-safe import behavior.');
   const before = await checkedJson(await fetch(`${base}/api/v1/summary`, { headers: { Cookie: cookie } }));
   if (before.instances !== 13) throw new Error('Portable Phase 2 synthetic fixture was not indexed.');
+  await publicHealth(base, true, manifest.version);
+  for (const headers of [undefined,readerHeaders,contributorHeaders]) {
+    const health = await fetch(`${base}/api/v1/health`, {headers});await health.body?.cancel();
+    if (health.status !== (headers ? 403 : 401)) throw new Error('Portable privileged health details reached an unauthorized client.');
+  }
+  const initialHealth = await checkedJson(await fetch(`${base}/api/v1/health`, {headers:{Cookie:cookie}}));
+  const putHealth = value => fetch(`${base}/api/v1/health/settings`, {method:'PUT',headers:{Cookie:cookie,'X-EASI-Store':'1','Content-Type':'application/json'},body:JSON.stringify(value)});
+  const changedSettings = await checkedJson(await putHealth({...initialHealth.settings,maxConcurrentImports:7}));
+  if (changedSettings.revision === initialHealth.settings.revision || changedSettings.maxConcurrentImports !== 7) throw new Error('Portable storage settings did not advance the review revision.');
+  await checkedJson(await putHealth(initialHealth.settings), 409);
+  const startedAudit = await checkedJson(await mutation('health/audits',{verifyHashes:true},cookie),202);
+  const verifiedAudit = await completedHealthAudit(base,cookie,startedAudit.id,before.instances,before.bytes);
   await stop();
   // Issue a test-only credential offline, then restart so both authentication
   // and the named peer credential are loaded normally. Never print this token.
@@ -294,6 +341,24 @@ try {
   if (!response.ok || after.instances !== before.instances || after.bytes !== before.bytes) throw new Error('Portable restart lost catalog state.');
   const persistedReader = await checkedJson(await fetch(`${base}/api/v1/session`, {headers:readerHeaders}));
   if (persistedReader.identity?.role !== 'reader') throw new Error('Portable restart lost credential scope.');
+  const persistedHealth = await checkedJson(await fetch(`${base}/api/v1/health`, {headers:{Cookie:cookie}}));
+  if (JSON.stringify(persistedHealth.settings) !== JSON.stringify(changedSettings) || JSON.stringify(persistedHealth.latestAudit) !== JSON.stringify(verifiedAudit)) throw new Error('Portable restart lost revisioned storage settings or its durable full-hash report.');
+  await completedHealthAudit(base,cookie,verifiedAudit.id,before.instances,before.bytes);
+  // Simulate exhausted reserve without consuming disk or modifying any original.
+  const reserveBytes = 1024 ** 5;
+  if (persistedHealth.storage.availableBytes >= reserveBytes) throw new Error('Portable smoke cannot simulate a low reserve on this filesystem.');
+  const lowSettings = await checkedJson(await putHealth({...persistedHealth.settings,reserveBytes,warningBytes:reserveBytes}));
+  await publicHealth(base,false,manifest.version);
+  const refused = await fetch(`${base}/api/v1/instances`, {method:'POST',headers:{Cookie:cookie,'X-EASI-Store':'1','Content-Type':'application/dicom'},body:createDicom({studyUid:uid(),seriesUid:uid(),sopUid:uid(),rows:4,columns:4})});
+  const refusal = await checkedJson(refused,507);
+  if (refusal.error?.code !== 'insufficient-storage') throw new Error('Portable capacity refusal did not explain the storage reserve.');
+  const whilePaused = await fetch(`${base}${datasetSnapshot.memberPath}`, {headers:readerHeaders});
+  if (whilePaused.status !== 200 || !Buffer.from(await whilePaused.arrayBuffer()).equals(enhanced)) throw new Error('Portable low-capacity admission blocked an existing original read.');
+  const pausedSummary = await checkedJson(await fetch(`${base}/api/v1/summary`, {headers:{Cookie:cookie}}));
+  if (pausedSummary.instances !== before.instances || pausedSummary.bytes !== before.bytes) throw new Error('Portable rejected low-capacity import changed the archive.');
+  const restoredSettings = await checkedJson(await putHealth({...initialHealth.settings,revision:lowSettings.revision}));
+  if (restoredSettings.reserveBytes !== initialHealth.settings.reserveBytes || restoredSettings.warningBytes !== initialHealth.settings.warningBytes || restoredSettings.maxConcurrentImports !== initialHealth.settings.maxConcurrentImports) throw new Error('Portable storage thresholds were not restored.');
+  await publicHealth(base,true,manifest.version);
   await phase2Dicomweb(base, cookie, sample);
   const peer = await checkedJson(await mutation('connections', { name: 'Portable self archive', type: 'dicomweb', baseUrl: `${base}/dicomweb`, credentialId: 'portableSelf', timeoutMs: 5000 }, cookie), 201);
   const connectionTest = await checkedJson(await mutation(`connections/${peer.id}/test`, {}, cookie));
@@ -363,7 +428,10 @@ try {
   await stop();
   const schema = await run(runtime, ['--input-type=module','-e',"import {DatabaseSync} from 'node:sqlite';const db=new DatabaseSync(process.argv[1],{readOnly:true});console.log(db.prepare('PRAGMA user_version').get().user_version);db.close();",path.join(dataDir,'catalog.sqlite')]);
   if (schema !== '3') throw new Error('Portable archive lacks the security downgrade fence.');
-  console.log(JSON.stringify({ artifact: archivePath, sha256: await digest(archivePath), target, runtime: runtimeVersion, version: manifest.version, inventoryFilesVerified: manifest.files.length, systemNodeAvailableToLauncher: false, setup: 'passed', syntheticDemoInstances: demo.instances, syntheticInstances: finalSummary.instances, retainedAfterRemoval:cleaned.instances, originalStudyZipAndManifest:'passed', confirmedRemovalAndDiskReclamation:'passed', removalRestartPersistence:'passed', restartPersistence: 'passed', dicomweb: { query: 'passed', nestedMetadata: 'passed', pixelAndNestedBulk: 'passed', exactNativeFrames: 'passed', protectedRoutes: 'passed', trustedPublicPrefix: 'passed' }, datasets:{explicitSelectionAndReadiness:'passed',immutableManifestAndSha256:'passed',exactFrozenOriginal:'passed',hashAvailability:'passed',protectedManagementAndDownloads:'passed',bundledPythonConsumerDownload:'passed',removedOriginalReportedMissing:'passed',noOriginalRetentionPinning:'passed',unchangedManifestAndRestartPersistence:'passed'}, identity:{scopedTokenRoles:'passed',readerOriginalAccess:'passed',contributorDuplicateImport:'passed',protectedManagement:'passed',credentialScopeRestart:'passed',researchNonEscalation:'passed',immediateRevocation:'passed',principalAttribution:'passed',securitySchemaFence:'passed'}, thumbnails: 'passed', configuredPeerCrudAndPersistence: 'passed', duplicateSafeStowSend: 'passed', duplicateSafeWadoRetrieve: 'passed', transferCheckpointPersistence: 'passed', explicitResearchAccessAndPersistence: 'passed', protectedAdministration: 'passed', authenticatedModeRestored: 'passed' }, null, 2));
+  const verificationPath = path.join(scratch,'offline-integrity-report.json');
+  const offlineAudit = JSON.parse(await run(runtime,['src/cli.js','verify','--data-dir',dataDir,'--output',verificationPath],{cwd:bundle}));
+  if (offlineAudit.status !== 'completed' || offlineAudit.verifyHashes !== true || offlineAudit.progress.indexed !== cleaned.instances || offlineAudit.progress.bytes !== cleaned.bytes || Object.values(offlineAudit.counts).some(value => value !== 0) || offlineAudit.findings.length || offlineAudit.findingsTruncated || JSON.stringify(JSON.parse(await readFile(verificationPath,'utf8'))) !== JSON.stringify(offlineAudit) || JSON.stringify(JSON.parse(await readFile(path.join(dataDir,'health-audit.json'),'utf8'))) !== JSON.stringify(offlineAudit)) throw new Error('Portable offline verification did not hash all remaining originals and persist the exact report.');
+  console.log(JSON.stringify({ artifact: archivePath, sha256: await digest(archivePath), target, runtime: runtimeVersion, version: manifest.version, inventoryFilesVerified: manifest.files.length, systemNodeAvailableToLauncher: false, setup: 'passed', syntheticDemoInstances: demo.instances, syntheticInstances: finalSummary.instances, retainedAfterRemoval:cleaned.instances, originalStudyZipAndManifest:'passed', confirmedRemovalAndDiskReclamation:'passed', removalRestartPersistence:'passed', restartPersistence: 'passed', dicomweb: { query: 'passed', nestedMetadata: 'passed', pixelAndNestedBulk: 'passed', exactNativeFrames: 'passed', protectedRoutes: 'passed', trustedPublicPrefix: 'passed' }, datasets:{explicitSelectionAndReadiness:'passed',immutableManifestAndSha256:'passed',exactFrozenOriginal:'passed',hashAvailability:'passed',protectedManagementAndDownloads:'passed',bundledPythonConsumerDownload:'passed',removedOriginalReportedMissing:'passed',noOriginalRetentionPinning:'passed',unchangedManifestAndRestartPersistence:'passed'}, identity:{scopedTokenRoles:'passed',readerOriginalAccess:'passed',contributorDuplicateImport:'passed',protectedManagement:'passed',credentialScopeRestart:'passed',researchNonEscalation:'passed',immediateRevocation:'passed',principalAttribution:'passed',securitySchemaFence:'passed'}, health:{livenessReadinessSeparation:'passed',protectedAdministration:'passed',revisionedSettings:'passed',settingsRestartPersistence:'passed',fullHashAudit:'passed',persistedAuditReport:'passed',lowSpaceIntakeRefusal:'passed',originalReadsWhilePaused:'passed',thresholdRestore:'passed',offlineVerification:'passed'}, supplyChain:{completeInventory:'passed',cycloneDxReleaseAndDependencies:'passed',securityGuidance:'passed',packageManagersOmitted:'passed'}, thumbnails: 'passed', configuredPeerCrudAndPersistence: 'passed', duplicateSafeStowSend: 'passed', duplicateSafeWadoRetrieve: 'passed', transferCheckpointPersistence: 'passed', explicitResearchAccessAndPersistence: 'passed', protectedAdministration: 'passed', authenticatedModeRestored: 'passed' }, null, 2));
 } finally {
   await stop();
   await rm(scratch, { recursive: true, force: true });

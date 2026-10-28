@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.0.0-rc.1 — First-release readiness candidate
+
+- Add administrator Archive health, live filesystem capacity admission, bounded concurrent intake, revisioned persisted reserves, and separate process/readiness endpoints.
+- Add bounded/cancellable inventory and full original SHA-256 reviews, private durable partial reports, and an offline `verify` command. Findings never trigger automatic repair or deletion.
+- Refuse local-research access in declared hosted/public deployments and reject proxy indicators for anonymous workstation bypass. Qualify a real Keycloak/HTTPS profile with generated role accounts.
+- Add reusable corpus, mixed-workload/crash/restore, exhausted-container-storage and independent interoperability qualification tools. Keep original corpora and private reports outside published inputs.
+- Prepare versioned native bundles and AMD64/ARM64 container publication gates with checksums, dependency inventories, security reporting and exact-candidate evidence. Omit unused package-manager tools from bundled runtimes.
+- Retain catalog schema3, authentication version2, original bytes and exact published EASI JS/View dependencies. This is the supported single-host research/development candidate, not full Orthanc parity or clinical qualification.
+
 ## 0.6.0 — Local and organizational identity preview
 
 - Add explicit local, hybrid and OIDC HTTP sign-in modes, retaining one built-in local administrator and a deliberate operator recovery boundary.

@@ -9,7 +9,7 @@ import { createStoreServer } from '../src/server.js';
 import { createDicom, uid } from './fixtures/synthetic.js';
 
 const policy = (profile = 'authenticated', dimse = { allowLoopback: true, peers: [] }) => ({ version: 1, profile, dimse });
-const request = (remoteAddress, headers = {}) => ({ socket: { remoteAddress }, headers });
+const request = (remoteAddress, headers = {}) => ({ socket: { remoteAddress }, headers: { host: '127.0.0.1:8048', ...headers } });
 async function fixture(t, options = {}) {
     const dataDir = await mkdtemp(path.join(tmpdir(), 'easi-store-access-'));
     let app = await createStoreServer({ dataDir, port: 0, ...options });

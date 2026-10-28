@@ -61,6 +61,7 @@ Protect it for the service account: owner-only permissions on macOS/Linux (`chmo
 ```sh
 node src/cli.js start \
   --public-url https://store.example.org \
+  --hosted \
   --access-profile authenticated \
   --auth-config /absolute/path/private-auth.json
 ```
