@@ -41,7 +41,8 @@ test('strict private settings persist, require revisions and permit zero reserve
     await assert.rejects(health.updateSettings({...saved,...changes}),{statusCode:400});
   const getter = { ...saved }; Object.defineProperty(getter,'reserveBytes',{get(){throw Error('getter evaluated');},enumerable:true});
   await assert.rejects(health.updateSettings(getter),{statusCode:400});
-  assert.equal((await stat(join(dataDir,'health-settings.json'))).mode & 0o777,0o600);
+  // Windows protection uses the archive directory's ACL, rather than POSIX modes.
+  if (process.platform !== 'win32') assert.equal((await stat(join(dataDir,'health-settings.json'))).mode & 0o777,0o600);
   await archive.close();
   const reopened = await Archive.open({dataDir});
   try { assert.deepEqual(reopened.health.settings,saved); } finally { await reopened.close(); }
