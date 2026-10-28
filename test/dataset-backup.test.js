@@ -28,6 +28,6 @@ test('verified full backup restores frozen dataset bytes, subject references and
         assert.deepEqual(await readFile(restoredService.getMember(dataset.id,1,member.memberId).path),bytes);
         const available=await restoredService.checkAvailability(dataset.id,1,{verifyHashes:true});assert.equal(available.summary.available,1);assert.equal(available.summary.changed,0);
         const second=await restoredService.createSnapshot(dataset.id,{revision:dataset.revision});assert.equal(second.version,2);assert.equal(restoredService.getManifest(dataset.id,2).members[0].subjectId,member.subjectId);
-        assert.equal(restoredService.getManifestText(dataset.id,1),text);assert.equal(archive.db.prepare('PRAGMA user_version').get().user_version,2);
+        assert.equal(restoredService.getManifestText(dataset.id,1),text);assert.equal(archive.db.prepare('PRAGMA user_version').get().user_version,3);
     } finally {await archive.close();}
 });

@@ -28,7 +28,15 @@ The choice persists in the private `access-policy.json` and is included in a ful
 
 Select **Authenticated clients → Save access settings**, or restart with `--access-profile authenticated`, to restore credential-required DICOMweb access. DICOMweb policy changes apply immediately. DIMSE uses an independent calling-AE/source-IP admission policy; updates apply to new associations. Restart when existing associations must be disconnected immediately.
 
-HTTP and DIMSE have separate listener addresses. DIMSE remains on loopback when HTTP binds to a network interface unless `--dimse-host` is explicitly set. Network DIMSE needs an explicit allowed-peer policy as well as deliberate port publication/firewall configuration; Docker does not expose it by default. [ACCESS_CONTROL.md](ACCESS_CONTROL.md) documents the validated policy format, API, environment variables, and topology limits. These options do not supply DICOM TLS, OIDC, granular roles, or production qualification.
+HTTP and DIMSE have separate listener addresses. DIMSE remains on loopback when HTTP binds to a network interface unless `--dimse-host` is explicitly set. Network DIMSE needs an explicit allowed-peer policy as well as deliberate port publication/firewall configuration; Docker does not expose it by default. [ACCESS_CONTROL.md](ACCESS_CONTROL.md) documents the validated policy format, API, environment variables, and topology limits. Client-access options do not configure organizational identity. Optional OIDC and archive-wide roles are configured separately through the [identity profile](IDENTITY.md); DICOM TLS, per-patient tenancy and production qualification remain outside this preview.
+
+## HTTP identity and credential administration
+
+The default identity mode is `local`: one built-in administrator. Organizational deployments can supply a private `--auth-config` / `EASI_STORE_AUTH_CONFIG` JSON file selecting `hybrid` or `oidc`, with explicit issuer/subject/group mappings to reader, contributor or administrator. Configure the exact HTTPS public callback and a reviewed reverse proxy. OIDC-only mode requires a previously established local administrator and disables local HTTP sign-in; SSO errors never silently enable a fallback.
+
+Administrators can issue/revoke named, expiring Store API credentials online. Use the least privileged role; a reader can consume frozen datasets and a contributor can import/curate. API credentials are separate from provider ID tokens, remote peer credentials and DIMSE AE/IP trust. Local administrator password changes require a local browser session and current password; deliberate offline recovery requires an owner-only password file and the archive lock. See [the full identity/recovery runbook](IDENTITY.md).
+
+Keep the external authentication configuration and provider registration secrets in a protected deployment backup alongside separately mounted remote credentials/TLS material. They are not automatically captured by an archive-directory backup unless deliberately stored there. The archive backup includes local authentication/token/security history; restored old credentials require review and rotation before exposure. Sessions do not survive restart/restore.
 
 ## Health and diagnosis
 
@@ -136,7 +144,7 @@ Choose **Remove study**, review counts/bytes, and type **DELETE** to remove Stor
 
 A committed removal with incomplete reclamation is reported explicitly. Restart Store to run recovery; do not manually delete its journal or restore individual object/catalog files. If recovery reports integrity/journal conflicts, retain the whole directory for repair. The v1 removal gate is conservative across archive readers; live-client traffic may require a quiet maintenance window.
 
-0.3.0 introduces catalog schema 2. Before its first start on an existing archive, stop Store and use the old build's offline `backup` command. Original bytes are not rewritten by migration. Keep that backup and old runtime. An older build refuses schema 2; rollback restores the pre-upgrade backup to a new directory. Current restore accepts verified 0.1.0, 0.2.0, 0.2.1, 0.3.0, 0.4.0, and 0.5.0 backup manifests. An original-study ZIP does not include catalog/security/peer/job state and cannot serve as this rollback backup.
+0.3.0 introduces catalog schema 2. Before its first start on an existing archive, stop Store and use the old build's offline `backup` command. Original bytes are not rewritten by migration. Keep that backup and old runtime. An older build refuses schema 2; rollback restores the pre-upgrade backup to a new directory. Current restore accepts supported historical backup manifests and verifies their bytes before upgrading; see the current identity/schema3 downgrade boundary below. An original-study ZIP does not include catalog/security/peer/job state and cannot serve as this rollback backup.
 
 ## C-MOVE receiving setup (0.4.0)
 
@@ -155,3 +163,7 @@ The [Datasets guide](AI_DATASETS.md) explains selection, explicit splits, privac
 A frozen version does not pin originals. Preserve the archive/full backup or a verified downloaded copy for experiment retention. Study removal makes affected members unavailable; dataset removal purges metadata/history while retaining originals. Use the typed dataset removal action to reclaim unused snapshot metadata capacity. Do not edit SQLite or hash-addressed object paths by hand.
 
 Strong availability checks read full encoded originals sequentially and can be canceled. Original downloads and manifest responses have separate concurrency caps; the client defaults to four workers. Authentication stays required for dataset management even when local DICOMweb clients have the research exemption. Generated demo originals are clearly labeled synthetic and are imported only through an explicit administrator action.
+
+## Identity upgrade and schema3 fence (0.6.0)
+
+The 0.6.0 identity milestone changes local authentication state to version2 and sets catalog schema3 as a security downgrade fence. This prevents a pre-0.6 runtime from opening role-bound credentials with its older unrestricted token behavior. It does not rewrite DICOM originals. Stop Store and take a verified pre-upgrade backup with the old build first; rollback restores that backup into a new directory with the matching old runtime. Never lower `user_version` or mix individual old authentication/catalog files into a changed archive. [IDENTITY.md](IDENTITY.md#upgrade-and-downgrade-boundary) documents the full boundary and recovery procedure.

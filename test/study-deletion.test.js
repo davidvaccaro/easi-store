@@ -242,7 +242,7 @@ test('older schema-one archives migrate without changing indexed originals or ac
   const db = new DatabaseSync(join(dataDir, 'catalog.sqlite'));
   db.exec('DROP TABLE study_deletions; ALTER TABLE activity DROP COLUMN details; PRAGMA user_version=1'); db.close();
   await reopened(dataDir, async recovered => {
-    assert.equal(recovered.db.prepare('PRAGMA user_version').get().user_version, 2);
+    assert.equal(recovered.db.prepare('PRAGMA user_version').get().user_version, 3);
     assert.equal(recovered.stats().instances, 1); assert.equal(recovered.activity()[0].outcome, 'stored');
     assert.deepEqual(await readFile(first.path), first.original);
     assert.equal((await recovered.deleteStudy(first.studyUid, { confirmation: 'DELETE', revision: recovered.previewStudyDeletion(first.studyUid).revision })).deleted, true);

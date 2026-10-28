@@ -1,3 +1,4 @@
+import { requestActor } from '../auth/RequestContext.js';
 import { DatabaseSync } from 'node:sqlite';
 import { createHash, randomUUID } from 'node:crypto';
 import { createReadStream } from 'node:fs';
@@ -101,7 +102,7 @@ export class Archive {
       this.db = new DatabaseSync(join(this.dataDir, 'catalog.sqlite'));
       await chmod(join(this.dataDir, 'catalog.sqlite'), 0o600);
       const schemaVersion = this.db.prepare('PRAGMA user_version').get().user_version;
-      if (schemaVersion > 2) throw new Error('This archive was created by a newer EASI Store version; use that version to open it.');
+      if (schemaVersion > 3) throw new Error('This archive was created by a newer EASI Store version; use that version to open it.');
       this.db.exec('PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL; PRAGMA foreign_keys=ON; PRAGMA busy_timeout=5000;');
       this.db.exec('BEGIN IMMEDIATE');
       try {
@@ -128,13 +129,16 @@ export class Archive {
           instanceCount INTEGER NOT NULL, bytes INTEGER NOT NULL, createdAt TEXT NOT NULL
         );`);
         if (!this.db.prepare('PRAGMA table_info(activity)').all().some(column => column.name === 'details')) this.db.exec('ALTER TABLE activity ADD COLUMN details TEXT');
-        this.db.exec('PRAGMA user_version=2; COMMIT');
+        // Security schema 3 fences older runtimes that cannot enforce token roles.
+        this.db.exec('PRAGMA user_version=3; COMMIT');
       } catch (error) { this.db.exec('ROLLBACK'); throw error; }
       await this.recover();
     } catch (error) { await this.close(); throw error; }
   }
 
   addActivity(outcome, record, details) {
+    const actor = requestActor();
+    if (actor) details = { ...details, actor };
     this.db.prepare('INSERT INTO activity (id,timestamp,outcome,source,instanceId,bytes,details) VALUES (?,?,?,?,?,?,?)').run(randomUUID(), new Date().toISOString(), outcome, record.source, record.id, record.bytes, details ? JSON.stringify(details) : null);
   }
 

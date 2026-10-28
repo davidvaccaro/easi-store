@@ -18,6 +18,9 @@ import { VERSION } from './version.js';
 import { MoveCoordinator } from './dimse/MoveCoordinator.js';
 import { DatasetService } from './datasets/DatasetService.js';
 import { DatasetRoutes } from './datasets/router.js';
+import { authorize, permissionsFor, publicIdentity, hasSuppliedCredential } from './auth/permissions.js';
+import { withRequestContext, setRequestActor } from './auth/RequestContext.js';
+import { SecurityAudit, auditAction } from './auth/SecurityAudit.js';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 const mime = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8',
@@ -31,7 +34,8 @@ export const CAPABILITIES = {
     archive: { storage: 'Filesystem with SHA-256 integrity', catalog: 'SQLite WAL',
         duplicates: 'Byte-identical reimports are idempotent; conflicting SOP Instance UIDs are rejected.',
         originalBytesPreserved: true, patientIdentity: 'Patient ID + issuer; missing issuer scoped to source.' },
-    security: { localAdmin: true, apiBearerTokens: true, externalIdentity: false },
+    security: { localAdmin: true, apiBearerTokens: true, externalIdentity: 'Optional configured OpenID Connect provider',
+        roles: ['reader', 'contributor', 'administrator'], scopedTokens: true },
     viewer: { name: 'EASI View', version: '1.0.0-rc.1', releaseCandidate: true, loading: 'Metadata-first DICOMweb; requested originals loaded on demand' },
     management: { originalStudyExport: 'Streaming ZIP/ZIP64 with SHA-256 manifest',
         studyRemoval: { previewRequired: true, confirmation: 'DELETE', scope: 'Store archival copies only' } },
@@ -44,15 +48,20 @@ export const CAPABILITIES = {
     connections: { configuredPeers: ['dicomweb', 'dimse'], transferJobs: true, restartRecovery: true, retry: true, cancel: true },
     thumbnails: { managementApi: true, profile: 'Native 8/16-bit monochrome, native 8-bit RGB/YBR, 8-bit baseline JPEG grayscale/YBR' },
     limitations: ['Not stable 1.0 or a qualified clinical system.', 'Whole-instance transcoding, XML metadata and advanced rendered services are not implemented.',
-        'PostgreSQL, object storage, OIDC, automatic routing, worklists, storage commitment and DICOM TLS are planned.']
+        'PostgreSQL, object storage, automatic routing, worklists, storage commitment and DICOM TLS are planned.']
 };
 
 export async function createStoreServer(options) {
-    const { dataDir, host = '127.0.0.1', port = 8048, publicUrl, maxInstanceBytes = 536870912,
+    const { dataDir, authConfiguration, host = '127.0.0.1', port = 8048, publicUrl: configuredPublicUrl, maxInstanceBytes = 536870912,
         staticRoot = path.join(root, 'dist/public'), credentials = {}, accessProfile, dimsePolicy, autoStartJobs = true, dimseHost = isLoopbackAddress(host) ? host : '127.0.0.1' } = options;
+    const publicUrl = configuredPublicUrl || (authConfiguration?.oidc?.callbackUrl ? new URL(authConfiguration.oidc.callbackUrl).origin : undefined);
     const archive = await Archive.open({ dataDir, maxInstanceBytes });
-    let auth;
-    try { auth = await new Auth(dataDir).open(); } catch (error) { await archive.close(); throw error; }
+    let auth, securityAudit;
+    try {
+        securityAudit = new SecurityAudit(archive);
+        auth = await new Auth(dataDir, { configuration: authConfiguration, publicUrl }).open();
+        if (auth.description().mode === 'oidc' && !auth.record) throw httpError(400, 'Create the local recovery administrator before enabling SSO-only mode.');
+    } catch (error) { await auth?.close(); await archive.close(); throw error; }
     let accessPolicy;
     try { accessPolicy = await new AccessPolicy({ dataDir, host, dimseHost }).open({ profile: accessProfile, dimse: dimsePolicy }); }
     catch (error) { await archive.close(); throw error; }
@@ -71,17 +80,26 @@ export async function createStoreServer(options) {
     capabilities.security.accessProfiles = ['authenticated', 'local-research'];
     capabilities.security.accessProfile = accessPolicy.record.profile;
     capabilities.security.dimseAccess = 'Loopback or explicit calling AE title + source IP allowlist; no DICOM TLS.';
+    const authentication = () => { const value = auth.description(); return { mode: value.mode, localLogin: value.localLoginAvailable, ssoLogin: value.oidcAvailable, providerName: value.oidcLabel || 'your organization' }; };
     const allowedHosts = new Set(['localhost', '127.0.0.1', '[::1]']);
     if (host !== '0.0.0.0' && host !== '::') allowedHosts.add(host);
     if (publicUrl) allowedHosts.add(new URL(publicUrl).hostname);
     const cookie = (token, req, clear = false) => `easi_store_session=${token}; Path=/; HttpOnly; SameSite=Strict; Max-Age=${clear ? 0 : 43200}${publicUrl?.startsWith('https://') || req.socket.encrypted ? '; Secure' : ''}`;
-    const server = http.createServer({ maxHeaderSize: 16384, requestTimeout: 300_000, headersTimeout: 20_000 }, async (req, res) => {
+    const transactionCookie = (value, clear = false) => `easi_store_oidc=${value}; Path=/api/v1/auth/oidc; HttpOnly; SameSite=Lax; Max-Age=${clear ? 0 : 600}${publicUrl?.startsWith('https://') ? '; Secure' : ''}`;
+    const server = http.createServer({ maxHeaderSize: 16384, requestTimeout: 300_000, headersTimeout: 20_000 }, (req, res) => withRequestContext(async () => {
         res.setHeader('X-Content-Type-Options', 'nosniff');
         res.setHeader('Referrer-Policy', 'no-referrer');
         res.setHeader('Cache-Control', 'no-store');
         res.setHeader('X-Frame-Options', 'DENY');
         res.setHeader('Content-Security-Policy', "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; worker-src 'self' blob:; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'");
-        let releaseRead;
+        let releaseRead, identity = null, auditId, auditOutcome;
+        let auditFinished = false;
+        const finishAudit = () => {
+            if (auditFinished || auditId === undefined) return; auditFinished = true;
+            try { securityAudit.finish(auditId, identity, auditOutcome || (res.writableFinished ? res.statusCode < 400 ? 'succeeded' : 'denied' : 'interrupted')); }
+            catch { console.error('A security activity completion could not be recorded. Inspect archive storage health.'); }
+        };
+        res.once('finish', finishAudit); res.once('close', finishAudit);
         try {
             if (closing) throw httpError(503, 'The archive is shutting down. Retry shortly.');
             const requestUrl = new URL(req.url, 'http://localhost');
@@ -93,29 +111,72 @@ export async function createStoreServer(options) {
             const forwardedBase = req.headers['x-easi-store-public-base'];
             if (forwardedBase !== undefined && forwardedBase !== '/easi-store/dicomweb') throw httpError(400, 'Unsupported public DICOMweb base path.');
             const publicBasePath = forwardedBase || '/dicomweb';
-            const identity = auth.identify(req);
+            identity = auth.identify(req); setRequestActor(identity);
             const dicomwebPath = p === '/dicomweb' || p.startsWith('/dicomweb/');
-            const localDicomwebAccess = dicomwebPath && accessPolicy.allowsDicomweb(req);
+            const localDicomwebAccess = dicomwebPath && !identity && !hasSuppliedCredential(req) && accessPolicy.allowsDicomweb(req);
             const mutation = !['GET', 'HEAD', 'OPTIONS'].includes(method);
             if (mutation) {
                 const origin = req.headers.origin;
                 const expected = publicUrl ? new URL(publicUrl).origin : `http://${req.headers.host}`;
                 if (origin && origin !== expected) throw httpError(403, 'Cross-origin writes are not allowed.');
-                if (identity !== 'bearer' && !localDicomwebAccess && req.headers['x-easi-store'] !== '1') throw httpError(403, 'Include the X-EASI-Store: 1 request header.');
+                if (identity?.type !== 'bearer' && !localDicomwebAccess && req.headers['x-easi-store'] !== '1') throw httpError(403, 'Include the X-EASI-Store: 1 request header.');
             }
+            const action = auditAction(method, p);
+            if (action) auditId = securityAudit.begin(identity, action);
             if (p === '/api/health' && method === 'GET') return json(res, 200, { status: 'ok', version: VERSION });
             if (p === '/api/v1/access' && method === 'GET') return json(res, 200, accessPolicy.publicDescription(req));
             if (p === '/api/v1/session' && method === 'GET') return json(res, 200, { authenticated: Boolean(identity), setupRequired: !auth.record,
-                bootstrapRequired: !auth.record && !isLoopback(req.socket.remoteAddress) });
+                bootstrapRequired: !auth.record && !isLoopback(req.socket.remoteAddress), identity: publicIdentity(identity),
+                permissions: permissionsFor(identity), authentication: authentication() });
+            if (p === '/api/v1/auth/oidc/start' && method === 'POST') {
+                if (!auth.record) throw httpError(409, 'Complete local administrator setup first.');
+                const body = await readJson(req, 1024); if (Object.keys(body).length) throw httpError(400, 'The SSO request takes no parameters.');
+                auth.rateLimit(req.socket.remoteAddress);
+                const started = await auth.startOidc(); res.setHeader('Set-Cookie', transactionCookie(started.transactionCookie));
+                return json(res, 200, { authorizationUrl: started.authorizationUrl });
+            }
+            if (p === '/api/v1/auth/oidc/callback' && method === 'GET') {
+                const browserToken = (req.headers.cookie || '').split(';').map(value => value.trim()).find(value => value.startsWith('easi_store_oidc='))?.slice('easi_store_oidc='.length);
+                try {
+                    const result = await auth.completeOidc({ url: new URL(req.url, publicUrl || 'http://localhost'), transactionCookie: browserToken });
+                    identity = result.principal; setRequestActor(identity);
+                    res.setHeader('Set-Cookie', [cookie(result.token, req), transactionCookie('', true)]);
+                    res.writeHead(303, { Location: '/' }); res.end();
+                } catch {
+                    auditOutcome = 'denied'; res.setHeader('Set-Cookie', transactionCookie('', true));
+                    res.writeHead(303, { Location: '/?signin=failed' }); res.end();
+                }
+                return;
+            }
             if ((p === '/api/v1/setup' || p === '/api/v1/login') && method === 'POST') {
                 const body = await readJson(req);
                 const token = await auth[p.endsWith('setup') ? 'setup' : 'login'](body, req.socket.remoteAddress);
+                identity = auth.identify({ headers: { cookie: `easi_store_session=${token}` } }); setRequestActor(identity);
                 res.setHeader('Set-Cookie', cookie(token, req));
                 return json(res, 200, { authenticated: true, setupRequired: false });
             }
             if (p.startsWith('/api/') || p === '/dicomweb' || p.startsWith('/dicomweb/')) {
                 if (!identity && !localDicomwebAccess) throw httpError(401, 'Sign in or use an API bearer token to access the archive.');
+                if (identity) authorize(identity, method, p);
             }
+            if (p === '/api/v1/identity' && method === 'GET') {
+                const config = auth.configuration || {}; const provider = config.oidc || {};
+                return json(res, 200, { authentication: { ...authentication(), ...(provider.issuer ? { issuer: provider.issuer, clientId: provider.clientId,
+                    callbackUrl: provider.callbackUrl, groupsClaim: provider.groupsClaim } : {}) }, identity: publicIdentity(identity), permissions: permissionsFor(identity) });
+            }
+            if (p === '/api/v1/auth/tokens' && method === 'GET') return json(res, 200, auth.listTokens(identity));
+            if (p === '/api/v1/auth/tokens' && method === 'POST') {
+                const result = await auth.createApiToken(await readJson(req, 4096), identity);
+                return json(res, 201, { token: result.token, credential: result.record });
+            }
+            const tokenRoute = p.match(/^\/api\/v1\/auth\/tokens\/([a-f0-9-]+)$/);
+            if (tokenRoute && method === 'DELETE') return json(res, 200, await auth.revokeApiToken(tokenRoute[1], identity));
+            if (p === '/api/v1/auth/password' && method === 'POST') {
+                auth.rateLimit(req.socket.remoteAddress);
+                const result = await auth.changePassword(await readJson(req, 16384), identity);
+                res.setHeader('Set-Cookie', cookie('', req, true)); return json(res, 200, result);
+            }
+            if (p === '/api/v1/auth/activity' && method === 'GET') return json(res, 200, securityAudit.list());
             // A read lease lasts through streaming/worker completion, so an
             // administrator cannot remove originals from an active reader.
             if ((method === 'GET' || method === 'HEAD') && (dicomwebPath || p.startsWith('/api/v1/download/') || /\/thumbnail$/.test(p)
@@ -222,16 +283,16 @@ export async function createStoreServer(options) {
                 { error: { code: status === 500 ? 'INTERNAL_ERROR' : `HTTP_${status}`, message: status >= 500 ? 'The archive could not complete this request. Check server status and retry.' : error.message } });
             if (status >= 500) console.error(`Request failed (${error.code || error.name || 'Error'}).`);
         } finally { activeReaders.delete(res); releaseRead?.(); }
-    });
+    }));
     server.on('clientError', (_error, socket) => socket.end('HTTP/1.1 400 Bad Request\r\nConnection: close\r\n\r\n'));
-    return { server, archive, auth, capabilities, connections, accessPolicy, studyExports, moveCoordinator, datasets,
+    return { server, archive, auth, capabilities, connections, accessPolicy, studyExports, moveCoordinator, datasets, securityAudit,
         async listen() {
             await new Promise((resolve, reject) => { server.once('error', reject); server.listen(port, host, () => { server.off('error', reject); resolve(); }); });
             return server.address();
         },
         async close() {
             closing = true;
-            datasetRoutes.close();
+            datasetRoutes.close(); await auth.close();
             // Record queue shutdown intent before the receiver aborts a move,
             // so unfinished jobs remain resumable instead of becoming failed.
             await connections.close();

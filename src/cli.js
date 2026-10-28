@@ -15,6 +15,7 @@ import { isLoopbackAddress } from './http/AccessPolicy.js';
 import { StorageScp } from './dimse/StorageScp.js';
 import { createDemoStudy } from './synthetic.js';
 import { VERSION } from './version.js';
+import { SecurityAudit } from './auth/SecurityAudit.js';
 
 export function defaultDataDir() {
     if (process.platform === 'darwin') return path.join(homedir(), 'Library/Application Support/EASI Store');
@@ -26,7 +27,7 @@ function parseArgs(args) {
     while (args.length) {
         const key = args.shift();
         if (['--open', '--no-dimse'].includes(key)) values[key.slice(2)] = true;
-        else if (['--data-dir', '--host', '--port', '--output', '--input', '--dimse-port', '--ae-title', '--public-url', '--label', '--credentials-file', '--access-profile', '--dimse-peers-file', '--dimse-host'].includes(key) && args[0] && !args[0].startsWith('--')) values[key.slice(2)] = args.shift();
+        else if (['--data-dir', '--host', '--port', '--output', '--input', '--dimse-port', '--ae-title', '--public-url', '--label', '--credentials-file', '--access-profile', '--dimse-peers-file', '--dimse-host', '--auth-config', '--password-file'].includes(key) && args[0] && !args[0].startsWith('--')) values[key.slice(2)] = args.shift();
         else throw new Error(`Unknown or incomplete option: ${key}`);
     }
     return values;
@@ -47,6 +48,31 @@ export async function main(args = process.argv.slice(2)) {
     if (Number(process.versions.node.split('.')[0]) !== 24) throw new Error('EASI Store requires Node.js 24 LTS. Use the portable installer to include Node.');
     const o = parseArgs([...args]);
     const dataDir = path.resolve(o['data-dir'] || process.env.EASI_STORE_DATA_DIR || defaultDataDir());
+    async function privateJson(filename, label) {
+        const info = await stat(filename);
+        if (!info.isFile() || info.size > 65536 || process.platform !== 'win32' && (info.mode & 0o077)) throw new Error(`Use a private ${label} JSON file (owner access only, at most 64 KiB).`);
+        let value; try { value = JSON.parse(await readFile(filename, 'utf8')); } catch { throw new Error(`The ${label} file must contain valid JSON.`); }
+        if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error(`The ${label} file must contain a JSON object.`);
+        return value;
+    }
+    if (o.command === 'reset-password') {
+        if (!o['password-file']) throw new Error('Provide --password-file with a private JSON file containing username and password. Stop Store first.');
+        const value = await privateJson(o['password-file'], 'password recovery');
+        if (Object.keys(value).some(key => !['username', 'password'].includes(key))) throw new Error('The recovery file accepts username and password only.');
+        const archive = await Archive.open({ dataDir });
+        try {
+            const auth = await new Auth(dataDir).open();
+            if (!auth.record) throw new Error('Create an administrator before using password recovery.');
+            const audit = new SecurityAudit(archive);
+            const principal = { id: 'local-filesystem-operator', displayName: 'Local recovery operator', source: 'local', role: 'administrator' };
+            const entry = audit.begin(principal, 'identity.offline-recovery');
+            try { await auth.resetLocalAdmin(value); audit.finish(entry, principal, 'succeeded'); }
+            catch (error) { audit.finish(entry, principal, 'failed'); throw error; }
+            finally { await auth.close(); }
+            console.log('Local administrator credentials reset. Existing API tokens and sessions were revoked. Configured sign-in mode is unchanged; protect or remove the private recovery file.');
+        } finally { await archive.close(); }
+        return;
+    }
     if (o.command === 'doctor') {
         console.log(JSON.stringify({ product: 'EASI Store', version: VERSION, node: process.version, platform: process.platform,
             architecture: process.arch, dataDir, dataExists: existsSync(dataDir), uiBuilt: existsSync(fileURLToPath(new URL('../dist/public/index.html', import.meta.url))),
@@ -54,8 +80,14 @@ export async function main(args = process.argv.slice(2)) {
     }
     if (o.command === 'token') {
         const archive = await Archive.open({ dataDir });
-        try { const auth = await new Auth(dataDir).open(); console.log(await auth.issueApiToken(o.label)); }
-        finally { await archive.close(); }
+        try {
+            const auth = await new Auth(dataDir).open(); const audit = new SecurityAudit(archive);
+            const principal = { id: 'local-filesystem-operator', displayName: 'Local integration operator', source: 'local', role: 'administrator' };
+            const entry = audit.begin(principal, 'identity.offline-token');
+            try { const token = await auth.issueApiToken(o.label); audit.finish(entry, principal, 'succeeded'); console.log(token); }
+            catch (error) { audit.finish(entry, principal, 'failed'); throw error; }
+            finally { await auth.close(); }
+        } finally { await archive.close(); }
         return;
     }
     if (o.command === 'demo') {
@@ -89,7 +121,7 @@ export async function main(args = process.argv.slice(2)) {
         if (!o.input) throw new Error('Provide --input with a verified backup directory and --data-dir with a new destination.');
         if (existsSync(dataDir)) throw new Error('Restore destination must not exist.');
         const input = path.resolve(o.input), manifest = JSON.parse(await readFile(path.join(input, 'backup-manifest.json'), 'utf8'));
-        if (manifest.product !== 'EASI Store' || !['0.1.0', '0.2.0', '0.2.1', '0.3.0', '0.4.0', VERSION].includes(manifest.version) || !Array.isArray(manifest.files)) throw new Error('Unsupported backup manifest.');
+        if (manifest.product !== 'EASI Store' || !['0.1.0', '0.2.0', '0.2.1', '0.3.0', '0.4.0', '0.5.0', VERSION].includes(manifest.version) || !Array.isArray(manifest.files)) throw new Error('Unsupported backup manifest.');
         for (const file of manifest.files) {
             const p = path.resolve(input, file.path);
             if (!p.startsWith(input + path.sep) || (await stat(p)).size !== file.bytes || await fileHash(p) !== file.sha256) throw new Error('Backup integrity verification failed.');
@@ -104,7 +136,7 @@ export async function main(args = process.argv.slice(2)) {
         try { console.log(`Restored ${archive.stats().instances} instances; integrity verified.`); } finally { await archive.close(); }
         return;
     }
-    if (o.command !== 'start') throw new Error('Commands: start, doctor, demo, token, backup, restore.');
+    if (o.command !== 'start') throw new Error('Commands: start, doctor, demo, token, reset-password, backup, restore.');
     const host = o.host || process.env.EASI_STORE_HOST || '127.0.0.1';
     const dimseHost = o['dimse-host'] || process.env.EASI_STORE_DIMSE_HOST || (isLoopbackAddress(host) ? host : '127.0.0.1');
     const port = portNumber(o.port || process.env.EASI_STORE_PORT || 8048, 'HTTP port');
@@ -125,7 +157,9 @@ export async function main(args = process.argv.slice(2)) {
         dimsePolicy = JSON.parse(await readFile(dimsePeersFile, 'utf8'));
     }
     // Resume persisted jobs only after the optional receiving AE has attached.
-    const app = await createStoreServer({ dataDir, host, port, publicUrl: o['public-url'] || process.env.EASI_STORE_PUBLIC_URL, credentials, accessProfile, dimsePolicy, dimseHost, autoStartJobs: false });
+    const authFile = o['auth-config'] || process.env.EASI_STORE_AUTH_CONFIG;
+    const authConfiguration = authFile ? await privateJson(authFile, 'authentication configuration') : undefined;
+    const app = await createStoreServer({ dataDir, host, port, authConfiguration, publicUrl: o['public-url'] || process.env.EASI_STORE_PUBLIC_URL, credentials, accessProfile, dimsePolicy, dimseHost, autoStartJobs: false });
     let dimse;
     try {
         await app.listen();
@@ -146,6 +180,7 @@ export async function main(args = process.argv.slice(2)) {
     const url = `http://${host === '0.0.0.0' || host === '::' ? '127.0.0.1' : host.includes(':') ? `[${host}]` : host}:${port}/`;
     console.log(`EASI Store ${VERSION} preview: ${url}`);
     console.log(`Archive data: ${dataDir}`);
+    console.log(`Sign-in mode: ${app.auth.description().mode}.`);
     console.log(`Client access: ${app.accessPolicy.record.profile}${app.accessPolicy.record.profile === 'local-research' ? ' (loopback DICOMweb and DIMSE clients need no administrator session)' : ' (DICOMweb requires a session or bearer token; DIMSE uses AE/IP access policy)'}.`);
     if (!app.auth.record) console.log('Open the browser to create your administrator. Container bootstrap token: <data directory>/bootstrap-token.');
     if (o.open) {

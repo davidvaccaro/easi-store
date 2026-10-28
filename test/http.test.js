@@ -13,7 +13,10 @@ test('HTTP archive: setup, original import/retrieve, authenticated catalog, rest
     let address = await app.listen(); let base = `http://127.0.0.1:${address.port}`;
     t.after(async () => { await app.close(); await rm(dataDir, { recursive: true, force: true }); });
     let response = await fetch(base + '/api/v1/session');
-    assert.deepEqual(await response.json(), { authenticated: false, setupRequired: true, bootstrapRequired: false });
+    const initial = await response.json();
+    assert.equal(initial.authenticated, false); assert.equal(initial.setupRequired, true); assert.equal(initial.bootstrapRequired, false);
+    assert.equal(initial.identity, null); assert.deepEqual(initial.permissions, []);
+    assert.deepEqual(initial.authentication, { mode: 'local', localLogin: true, ssoLogin: false, providerName: 'your organization' });
     assert.equal((await fetch(base + '/api/v1/summary')).status, 401);
     assert.equal((await fetch(base + '/dicomweb/studies')).status, 401);
     response = await fetch(base + '/api/v1/setup', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-EASI-Store': '1' }, body: JSON.stringify({ username: 'research', password: 'synthetic-test-password' }) });

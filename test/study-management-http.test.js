@@ -66,7 +66,7 @@ test('management export/removal remain protected in research mode, reject stale 
     assert.equal((await fetch(endpoint + '/export', { headers })).status, 404);
     await app.close(); app = await createStoreServer({ dataDir, port: 0 }); address = await app.listen(); base = `http://127.0.0.1:${address.port}`;
     assert.equal(app.archive.stats().instances, 1); assert.deepEqual(await readFile(app.archive.getInstance(kept.studyUid, kept.seriesUid, kept.sopUid).path), retained);
-    assert.equal(app.archive.db.prepare('PRAGMA user_version').get().user_version, 2);
+    assert.equal(app.archive.db.prepare('PRAGMA user_version').get().user_version, 3);
     assert.equal(app.archive.db.prepare('SELECT COUNT(*) AS n FROM study_deletions').get().n, 0);
 });
 

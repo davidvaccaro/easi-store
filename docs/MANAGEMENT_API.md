@@ -1,20 +1,18 @@
-# Management API preview — 0.5.0
+# Management API preview — 0.6.0
 
-These endpoints belong to EASI Store, separately from `/dicomweb`. They power the browser interface and are versioned under `/api/v1`. Management archive reads and writes require a signed-in session or Bearer token in both client access profiles. The explicit public discovery/bootstrap routes are listed below. This first preview has a single administrator role; granular roles are a later milestone.
+These endpoints belong to EASI Store, separately from `/dicomweb`. They power the browser interface and are versioned under `/api/v1`. Archive reads and writes require an authorized local/OIDC session or role-bound Store Bearer credential in both client access profiles. Explicit discovery/bootstrap routes remain public.
 
-## Authentication
+## Authentication and permissions
 
-Create the administrator using the browser. Session cookies are HTTP-only and SameSite Strict; they expire after 12 hours and on restart. Cookie-authenticated writes require `X-EASI-Store: 1`, and cross-origin writes are rejected. No cross-origin browser access is enabled by default.
+The identity mode is `local`, `hybrid` or `oidc`; roles are `reader`, `contributor` and `administrator`. Readers can browse/view/export originals and consume/verify frozen datasets. Contributors add imports and dataset creation/editing/freezing. Administrators add deletion, remote connections/transfers, access/identity management and activity. The complete [identity guide](IDENTITY.md) documents exact boundaries, configuration and recovery.
 
-For an integration token, stop Store, then run:
+Store session cookies are HttpOnly and SameSite Strict, and do not survive restart. Cookie-authenticated writes require `X-EASI-Store: 1`; cross-origin writes are rejected. The temporary OIDC callback transaction cookie is SameSite Lax. SSO validates the configured issuer and explicit subject/group mappings; an organization's successful sign-in alone does not authorize archive access.
 
-```sh
-node src/cli.js token --label "Research importer"
-```
+Use the online administrator token endpoints below to create a named role-bound credential, receive its secret once, and revoke it later. Send `Authorization: Bearer YOUR_TOKEN`. Lists return metadata, not secrets or hashes. Provider ID tokens are not accepted as Store integration credentials. Store credentials have bounded expiry and remain role-limited across restarts.
 
-Use the same `--data-dir` as the server if it is customized. The command prints a new credential exactly once, as an explicit local administrative action. Keep it in a secret store, outside Git and browser client bundles. Restart Store and send `Authorization: Bearer YOUR_TOKEN` on requests. Tokens persist across restarts; the preview does not yet provide token revocation UI or scoped identities.
+The **local-research** profile permits genuinely anonymous loopback DICOMweb clients; it grants no management rights and does not elevate a supplied reader or invalid credential into an importer. Native DIMSE retains separate calling-AE/source-IP admission. See [ACCESS_CONTROL.md](ACCESS_CONTROL.md).
 
-The **local-research** profile changes local DICOMweb client requirements, not management authorization. A research client may query/retrieve/STOW without credentials on a loopback connection, but cannot use management import, summary, thumbnails, settings, peer configuration, or transfer jobs without an administrator session or token. DIMSE has separate calling-AE/source-IP trust rules. See [ACCESS_CONTROL.md](ACCESS_CONTROL.md).
+Unknown management mutations fail closed. HEAD/OPTIONS do not bypass route permission checks. `403` can therefore mean insufficient role as well as an invalid host/origin/header. A read-only operation can use POST: frozen availability/hash verification requires `archive.read`, not dataset-write permission.
 
 ## Endpoints
 
@@ -27,6 +25,11 @@ The **local-research** profile changes local DICOMweb client requirements, not m
 | POST | `/setup` | First administrator, `{username,password,bootstrapToken?}`; loopback or container bootstrap token |
 | POST | `/login` | `{username,password}`, sets session cookie |
 | POST | `/logout` | Ends current browser session |
+| GET | `/identity` | Administrator-only redacted identity/configuration summary |
+| GET | `/auth/activity` | Administrator-only recent security action/actor/outcome records |
+| GET / POST | `/auth/tokens` | Administrator-only `{items}` metadata list / create `{label,role,expiresInDays}`; `201` returns `{token,credential}` once |
+| DELETE | `/auth/tokens/{id}` | Administrator-only immediate revocation for subsequent requests; `{revoked:true}` |
+| POST | `/auth/password` | Local administrator session only; `{currentPassword,newPassword}`; success invalidates prior local sessions/API credentials and requires reauthentication |
 | GET | `/summary` | Patient/study/series/instance counts and original byte total |
 | GET | `/studies?search=&limit=100&offset=0` | `{items,total}`; literal free-text search and stable pagination |
 | GET | `/studies/{studyUid}/series` | `{items}` of series summaries |
@@ -113,7 +116,7 @@ Study removal is irreversible without a full backup. Source folders, previous ex
 
 ## Research datasets
 
-All dataset, manifest, member and tool endpoints require management authentication in both access profiles. Writes use the normal origin and `X-EASI-Store` rules. Dataset/version identifiers are server-generated; requests never supply an object path or remote destination.
+All dataset, manifest, member and tool endpoints require role-authorized management authentication in both access profiles. Readers may inspect definitions, manifests/originals/tools and verify availability/hashes. Contributors may create/edit/freeze definitions and generate the research demo. Metadata/history deletion requires administrator rights. Writes retain the normal origin and `X-EASI-Store` rules. Dataset/version identifiers are server-generated; requests never supply an object path or remote destination.
 
 | Method | Path after `/api/v1` | Result |
 | --- | --- | --- |

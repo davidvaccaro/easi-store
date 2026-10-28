@@ -77,7 +77,9 @@ async function fixture(t, { originals, split = { seed: 'consumer-proof', ratios:
     assert.equal(response.status, 201); const version = await response.json();
     const manifestResponse = await fetch(`${base}/api/v1/datasets/${dataset.id}/versions/1/manifest`, { headers });
     assert.equal(manifestResponse.status, 200); const raw = Buffer.from(await manifestResponse.arrayBuffer()), manifest = JSON.parse(raw);
-    return { app, directory, base, token, headers, datasetId: dataset.id, versionReceipt: version, manifest, raw, expected };
+    const administrator = app.auth.identify({headers: {authorization: `Bearer ${token}`}});
+    const downloadCredential = await app.auth.createApiToken({label: 'Read-only Python dataset consumer', role: 'reader', expiresInDays: 1}, administrator);
+    return { app, directory, base, token: downloadCredential.token, headers, datasetId: dataset.id, versionReceipt: version, manifest, raw, expected };
 }
 
 async function localFiles(fixture, output) {
@@ -87,7 +89,7 @@ async function localFiles(fixture, output) {
     }
 }
 
-test('independent Python client authenticates, freezes exact encoded originals and resumes by hashing existing files', { timeout: 30000 }, async t => {
+test('independent Python client authenticates with read-only credentials, freezes exact encoded originals and resumes by hashing existing files', { timeout: 30000 }, async t => {
     const f = await fixture(t), output = join(f.directory, 'download');
     // A newly imported instance in an already selected series must not expand
     // the earlier frozen version consumed by Python.

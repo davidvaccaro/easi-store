@@ -258,6 +258,25 @@ try {
   await checkedJson(response, 201);
   await phase2Dicomweb(base, cookie, sample);
   const datasetSnapshot = await datasetSmoke(base,cookie,sample,enhanced,bundle);
+  const mint = async (label, role) => checkedJson(await mutation('auth/tokens', {label,role,expiresInDays:1}, cookie), 201);
+  const readerCredential = await mint('Portable reader', 'reader');
+  const contributorCredential = await mint('Portable contributor', 'contributor');
+  const readerHeaders = {Authorization:`Bearer ${readerCredential.token}`};
+  const contributorHeaders = {Authorization:`Bearer ${contributorCredential.token}`};
+  const readerSession = await checkedJson(await fetch(`${base}/api/v1/session`, {headers:readerHeaders}));
+  if (readerSession.identity?.role !== 'reader' || readerSession.identity?.source !== 'token' || !readerSession.permissions.includes('archive.read') || readerSession.permissions.includes('archive.import')) throw new Error('Portable reader credential has incorrect effective permissions.');
+  const readerOriginal = await fetch(`${base}${datasetSnapshot.memberPath}`, {headers:readerHeaders});
+  if (readerOriginal.status !== 200 || !Buffer.from(await readerOriginal.arrayBuffer()).equals(enhanced)) throw new Error('Portable reader cannot retrieve its exact frozen original.');
+  for (const headers of [readerHeaders,contributorHeaders]) {
+    for (const suffix of ['auth/tokens','connections','access-policy','activity']) {
+      const denied = await fetch(`${base}/api/v1/${suffix}`, {headers});await denied.body?.cancel();
+      if (denied.status !== 403) throw new Error('Portable scoped credential reached privileged management.');
+    }
+  }
+  const readerImport = await fetch(`${base}/api/v1/instances`, {method:'POST',headers:{...readerHeaders,'Content-Type':'application/dicom'},body:enhanced});
+  await readerImport.body?.cancel();if (readerImport.status !== 403) throw new Error('Portable reader imported an instance.');
+  const contributed = await checkedJson(await fetch(`${base}/api/v1/instances`, {method:'POST',headers:{...contributorHeaders,'Content-Type':'application/dicom'},body:enhanced}));
+  if (contributed.status !== 'duplicate') throw new Error('Portable contributor did not retain duplicate-safe import behavior.');
   const before = await checkedJson(await fetch(`${base}/api/v1/summary`, { headers: { Cookie: cookie } }));
   if (before.instances !== 13) throw new Error('Portable Phase 2 synthetic fixture was not indexed.');
   await stop();
@@ -273,6 +292,8 @@ try {
   response = await fetch(`${base}/api/v1/summary`, { headers: { Cookie: cookie } });
   const after = await response.json();
   if (!response.ok || after.instances !== before.instances || after.bytes !== before.bytes) throw new Error('Portable restart lost catalog state.');
+  const persistedReader = await checkedJson(await fetch(`${base}/api/v1/session`, {headers:readerHeaders}));
+  if (persistedReader.identity?.role !== 'reader') throw new Error('Portable restart lost credential scope.');
   await phase2Dicomweb(base, cookie, sample);
   const peer = await checkedJson(await mutation('connections', { name: 'Portable self archive', type: 'dicomweb', baseUrl: `${base}/dicomweb`, credentialId: 'portableSelf', timeoutMs: 5000 }, cookie), 201);
   const connectionTest = await checkedJson(await mutation(`connections/${peer.id}/test`, {}, cookie));
@@ -299,6 +320,8 @@ try {
   const initialPolicy = await checkedJson(await fetch(`${base}/api/v1/access-policy`, {headers:{Cookie:cookie}}));
   const setProfile = async profile => checkedJson(await fetch(`${base}/api/v1/access-policy`, {method:'PUT',headers:{Cookie:cookie,'Content-Type':'application/json','X-EASI-Store':'1'},body:JSON.stringify({...initialPolicy,profile})}));
   await setProfile('local-research');
+  const researchReaderWrite = await fetch(`${base}/dicomweb/studies`, {method:'POST',headers:readerHeaders,body:''});await researchReaderWrite.body?.cancel();
+  if (researchReaderWrite.status !== 403) throw new Error('Portable research mode escalated a reader credential.');
   if ((await fetch(`${base}/dicomweb/studies`)).status !== 200 || (await fetch(`${base}/api/v1/summary`)).status !== 401) throw new Error('Research mode did not separate client and administration access.');
   await stop(); await launch();
   const accessDescription = await checkedJson(await fetch(`${base}/api/v1/access`));
@@ -331,8 +354,16 @@ try {
   const shards = await readdir(path.join(dataDir,'objects'),{withFileTypes:true});let originalsOnDisk=0;
   for (const shard of shards.filter(item=>item.isDirectory())) originalsOnDisk+=(await readdir(path.join(dataDir,'objects',shard.name))).filter(name=>name.endsWith('.dcm')).length;
   if (originalsOnDisk !== demo.instances) throw new Error('Portable removal left the selected original on disk.');
+  await checkedJson(await fetch(`${base}/api/v1/auth/tokens/${readerCredential.credential.id}`, {method:'DELETE',headers:{Cookie:cookie,'X-EASI-Store':'1'}}));
+  const revoked = await fetch(`${base}/api/v1/summary`, {headers:readerHeaders});await revoked.body?.cancel();
+  if (revoked.status !== 401) throw new Error('Portable revoked reader remained authorized.');
+  await checkedJson(await fetch(`${base}/api/v1/datasets/${datasetSnapshot.datasetId}`, {headers:contributorHeaders}));
+  const accessActivity = await checkedJson(await fetch(`${base}/api/v1/auth/activity`, {headers:{Cookie:cookie}}));
+  if (!accessActivity.items.some(item=>item.actor?.source==='token' && item.actor.displayName==='Portable contributor')) throw new Error('Portable access activity lost individual credential attribution.');
   await stop();
-  console.log(JSON.stringify({ artifact: archivePath, sha256: await digest(archivePath), target, runtime: runtimeVersion, version: manifest.version, inventoryFilesVerified: manifest.files.length, systemNodeAvailableToLauncher: false, setup: 'passed', syntheticDemoInstances: demo.instances, syntheticInstances: finalSummary.instances, retainedAfterRemoval:cleaned.instances, originalStudyZipAndManifest:'passed', confirmedRemovalAndDiskReclamation:'passed', removalRestartPersistence:'passed', restartPersistence: 'passed', dicomweb: { query: 'passed', nestedMetadata: 'passed', pixelAndNestedBulk: 'passed', exactNativeFrames: 'passed', protectedRoutes: 'passed', trustedPublicPrefix: 'passed' }, datasets:{explicitSelectionAndReadiness:'passed',immutableManifestAndSha256:'passed',exactFrozenOriginal:'passed',hashAvailability:'passed',protectedManagementAndDownloads:'passed',bundledPythonConsumerDownload:'passed',removedOriginalReportedMissing:'passed',noOriginalRetentionPinning:'passed',unchangedManifestAndRestartPersistence:'passed'}, thumbnails: 'passed', configuredPeerCrudAndPersistence: 'passed', duplicateSafeStowSend: 'passed', duplicateSafeWadoRetrieve: 'passed', transferCheckpointPersistence: 'passed', explicitResearchAccessAndPersistence: 'passed', protectedAdministration: 'passed', authenticatedModeRestored: 'passed' }, null, 2));
+  const schema = await run(runtime, ['--input-type=module','-e',"import {DatabaseSync} from 'node:sqlite';const db=new DatabaseSync(process.argv[1],{readOnly:true});console.log(db.prepare('PRAGMA user_version').get().user_version);db.close();",path.join(dataDir,'catalog.sqlite')]);
+  if (schema !== '3') throw new Error('Portable archive lacks the security downgrade fence.');
+  console.log(JSON.stringify({ artifact: archivePath, sha256: await digest(archivePath), target, runtime: runtimeVersion, version: manifest.version, inventoryFilesVerified: manifest.files.length, systemNodeAvailableToLauncher: false, setup: 'passed', syntheticDemoInstances: demo.instances, syntheticInstances: finalSummary.instances, retainedAfterRemoval:cleaned.instances, originalStudyZipAndManifest:'passed', confirmedRemovalAndDiskReclamation:'passed', removalRestartPersistence:'passed', restartPersistence: 'passed', dicomweb: { query: 'passed', nestedMetadata: 'passed', pixelAndNestedBulk: 'passed', exactNativeFrames: 'passed', protectedRoutes: 'passed', trustedPublicPrefix: 'passed' }, datasets:{explicitSelectionAndReadiness:'passed',immutableManifestAndSha256:'passed',exactFrozenOriginal:'passed',hashAvailability:'passed',protectedManagementAndDownloads:'passed',bundledPythonConsumerDownload:'passed',removedOriginalReportedMissing:'passed',noOriginalRetentionPinning:'passed',unchangedManifestAndRestartPersistence:'passed'}, identity:{scopedTokenRoles:'passed',readerOriginalAccess:'passed',contributorDuplicateImport:'passed',protectedManagement:'passed',credentialScopeRestart:'passed',researchNonEscalation:'passed',immediateRevocation:'passed',principalAttribution:'passed',securitySchemaFence:'passed'}, thumbnails: 'passed', configuredPeerCrudAndPersistence: 'passed', duplicateSafeStowSend: 'passed', duplicateSafeWadoRetrieve: 'passed', transferCheckpointPersistence: 'passed', explicitResearchAccessAndPersistence: 'passed', protectedAdministration: 'passed', authenticatedModeRestored: 'passed' }, null, 2));
 } finally {
   await stop();
   await rm(scratch, { recursive: true, force: true });

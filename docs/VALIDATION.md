@@ -2,6 +2,69 @@
 
 Validation uses independently generated DICOM fixtures. Original imaging collections are not part of the source, build, test suite, or artifacts.
 
+## Local identity and OIDC — 0.6.0 preview, 2026-10-28
+
+The integrated candidate passed **260 synthetic tests**, source-asset checks,
+TypeScript, the production UI build and all 64 distribution hashes on macOS
+ARM64 and in an offline Linux ARM64 test container. This includes 26 focused
+authentication/OIDC cases and 12 independent HTTP-security groups. The ten real
+Python consumer tests now use read-only credentials for their downloads.
+
+A generated local identity provider exercises the actual maintained OIDC client,
+RSA-signed ID tokens, discovery/JWKS, authorization-code exchange, PKCE, state,
+nonce, exact callbacks and issuer/audience/expiry/signature validation. Unmapped
+subjects, malformed group claims, replay, wrong browser binding, expired/bounded
+transactions, unavailable providers and insecure endpoints fail closed. Tests
+cover local credential migration, role ceilings, revocation, serialized writes,
+recovery, and backup/restore preserving role-bound credentials and schema 3.
+
+Disposable Chrome passed **18 workflow checks**: local setup, one-time token
+display/revocation, incorrect/successful password changes, real OIDC redirects
+for all three roles, Reader pixel display and frozen-version verification,
+Contributor extensionless imports/versioning, Administrator controls, stale-role
+403 handling, unmapped accounts, SSO-only and hybrid provider-outage behavior,
+and a 390 px layout. No browser exceptions or console errors occurred. Tests
+used no original medical files or real organizational credentials.
+
+The final Linux ARM64 production image passed six runtime qualification groups:
+Node 24.22.1, nonroot UID 10001, read-only root, private volume, no runtime Python,
+role boundaries, byte-identical originals, schema 3, and credential/revocation/
+snapshot persistence across restart. All 120 runtime input files matched the
+frozen source. Image ID:
+`sha256:0621cb0dbf2f4a046087d3c47e2a23d79c5982152bf26c9e761071e495031533`.
+Synthetic containers and volumes were removed after qualification.
+
+The macOS ARM64 portable bundle passed all **5,465 inventory files** and its
+actual launcher smoke with bundled Node 24.22.1 and no system Node on PATH.
+All existing archive/dataset/transfer smoke groups passed, plus nine identity
+assertions: scoped roles, Reader original access, Contributor duplicate import,
+protected management, scope persistence after restart, research non-escalation,
+immediate revocation, principal attribution and the security schema fence.
+Artifact SHA-256:
+`c6c9c3cb8170fb036ba1d32afb0e21fe99c90a0e0f275aa13a572bb75e792768`.
+
+The previously qualified actual 0.5.0 macOS package was independently started
+against an upgraded disposable synthetic archive. It refused schema 3 before
+opening the role-bound authentication state; authentication and original bytes
+were unchanged, and 0.6.0 retained the Reader credential. This is a security
+downgrade fence, not a reversible in-place downgrade. Restore a complete
+pre-upgrade backup into a separate directory for rollback.
+
+Before updating the local archive, 0.5.0 made a protected offline backup. All
+2,998 backup entries and all 2,992 original hashes verified. The update retained
+one patient, two studies, 20 series, 1,596,352,936 bytes, both configured peers,
+dataset counts, the local administrator password hash and the local-research
+profile. Authentication migrated to version 2 and the catalog to security
+schema 3. Local sign-in remains configured; no organizational provider was
+enabled and anonymous management remains protected.
+
+Entra ID, Okta, Keycloak and generic OIDC guides have configuration examples
+validated against Store's configuration parser and cite official provider
+documentation. They are setup recipes, not evidence of live-provider tenant
+qualification. The qualified protocol profile uses RS256 ID tokens and explicit
+subject/group mappings. SAML, SCIM, certificate client authentication, back-channel
+logout and immediate directory-group synchronization are outside this preview.
+
 ## Research datasets — 0.5.0 preview, 2026-10-27
 
 The integrated candidate passed **222 synthetic tests**, source guards,

@@ -38,7 +38,7 @@ These checks do not assess geometry, spacing, orientation, calibration, image qu
 
 ## Verified downloads
 
-Create an integration token using Store's existing administrator workflow: stop Store, run `node src/cli.js token --label "AI dataset consumer"` with the same data directory, keep the printed credential private, then restart Store. Use an existing authorized token if you already have one. Administration and dataset management remain authenticated in local-research mode; that profile's credential exemption applies to DICOMweb clients, not dataset management.
+Create a named, expiring `reader` credential through **Administration → Identity** while Store is running; reader is sufficient for frozen manifest/original downloads and availability/hash checks. An administrator receives `{token,credential}` once and can revoke it later. Use contributor for imports/dataset creation or editing, and administrator only for destructive/administrative work. The offline `token` CLI remains an operator compatibility path. Dataset management stays authorized in local-research mode; that profile's anonymous exemption applies only to loopback DICOMweb. See [identity and permissions](IDENTITY.md).
 
 Set `EASI_STORE_TOKEN` through your shell/secret manager, outside the command text, manifest and notebook. Copy the command from **Frozen versions → Run a verified download**, or use:
 

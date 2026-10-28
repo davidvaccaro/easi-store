@@ -1,6 +1,6 @@
 {
   "name": "@xinonix/easi-store",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "private": true,
   "type": "module",
   "description": "A self-hosted imaging archive built with EASI JS and EASI View.",
@@ -28,6 +28,7 @@
   "dependencies": {
     "@xinonix/easi-js": "1.0.1",
     "@xinonix/easi-view": "1.0.0-rc.1",
+    "openid-client": "6.8.8",
     "react": "19.3.1",
     "react-dom": "19.3.1",
     "yazl": "3.3.1"

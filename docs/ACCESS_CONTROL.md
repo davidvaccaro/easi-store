@@ -1,16 +1,16 @@
 # Client access and administrator access
 
-EASI Store separates archive clients from the administrator interface. Choose the **local-research** profile for a workstation archive that ordinary local DICOM clients can use without a browser sign-in. Choose **authenticated** when DICOMweb clients must present credentials. The administrator interface and management API require a sign-in or bearer token in both profiles.
+EASI Store separates archive clients from the administrator interface. Choose the **local-research** profile for a workstation archive that ordinary local DICOM clients can use without a browser sign-in. Choose **authenticated** when DICOMweb clients must present credentials. The browser interface and management API require an authorized local/OIDC session or role-bound Store bearer credential in both profiles. [Identity and permissions](IDENTITY.md) defines the separate `local`, `hybrid` and `oidc` identity modes.
 
 Existing and new archives default to **authenticated**. Enabling research access is an explicit choice. The selected policy is persisted in the archive's private `access-policy.json` and included in offline backups. Changing a profile does not reimport, copy, or modify stored DICOM objects.
 
 | Access | authenticated | local-research |
 | --- | --- | --- |
-| DICOMweb QIDO, metadata, frames, bulk data, original retrieval, STOW | Valid administrator session or API bearer token | No credentials for clients connected over actual loopback sockets |
+| DICOMweb QIDO, metadata, frames, bulk data, original retrieval, STOW | Authorized local/OIDC session or role-bound API credential | No credentials for clients connected over actual loopback sockets |
 | Administrator UI and `/api/v1` management routes | Authentication required | Authentication required |
 | DIMSE ECHO, STORE, FIND, GET, MOVE | Calling AE title/source IP policy | Calling AE title/source IP policy |
 | HTTP and DIMSE listener addresses | Explicit configuration; network DIMSE needs configured peers | Both must be literal loopback addresses |
-| DICOM TLS / external identity provider | Not implemented | Not implemented |
+| OIDC / DICOM TLS | Optional configured OIDC; DICOM TLS not implemented | Optional configured OIDC; DICOM TLS not implemented |
 
 `GET /api/health`, `GET /api/v1/session`, and `GET /api/v1/access` expose minimal health or access information without patient data. First-run setup remains a separate protected bootstrap flow.
 
@@ -38,13 +38,11 @@ Switch back through **Administration → Client access** or start with:
 node src/cli.js start --access-profile authenticated
 ```
 
-DICOMweb then requires either the existing HttpOnly administrator session or an API bearer token. A standalone integration can use a bearer token without maintaining an interactive browser sign-in. To issue one, stop the Store so the CLI can acquire the archive lock, then run:
+DICOMweb requires an authorized HttpOnly Store session or API bearer credential. Reader sessions/credentials may query and retrieve; importing/STOW requires contributor or administrator rights. The same route permissions apply to local and OIDC sessions.
 
-```sh
-node src/cli.js token --label "Research integration"
-```
+Administrators can create and revoke named, expiring credentials in **Administration → Identity** while Store is running. Choose a reader for downloads or a contributor for imports. The secret is shown once; save it in the client's private configuration, outside browser bundles and repositories. Requests use `Authorization: Bearer <token>`. Existing offline token issuance remains a local operator compatibility path; normal credential administration no longer requires stopping the server.
 
-The command prints a secret once; save it in the client's private configuration, outside browser bundles or repositories. Restart the Store and send `Authorization: Bearer <token>` with client requests. The current tokens authorize archive and management operations; scoped roles and external identity are future work. Use HTTPS through a suitably configured reverse proxy for network HTTP deployment. HTTP bearer authentication does not encrypt transport.
+Research access is an exemption for genuinely anonymous DICOMweb clients, not a way to elevate credentials: a supplied reader remains read-only and an invalid supplied credential is rejected. Management and identity routes never inherit this exemption. Use HTTPS through a suitably configured reverse proxy for network HTTP deployment. Bearer authentication does not encrypt transport. See [IDENTITY.md](IDENTITY.md) for the full role table, SSO configuration, token lifecycle and deliberate local recovery.
 
 ## DIMSE trust
 

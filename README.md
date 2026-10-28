@@ -4,7 +4,7 @@
 
 EASI Store is an independent server project in the EASI family. Import DICOM instances, find a patient or examination, browse its series, open an image, and exchange studies with configured DICOMweb or DIMSE archives. Original HTTP/file imports are preserved byte for byte; DIMSE preserves the transmitted dataset and creates Part 10 file metadata. The catalog is stored in SQLite and image objects live on disk.
 
-**Status: 0.5.0 source-available workflow preview.** The Datasets workspace adds saved cross-study series selections, technical review, immutable instance/hash manifests, optional patient-grouped train/validation/test splits, and verified Python downloads. Connected DICOMweb/DIMSE archives, durable transfers including C-GET/C-MOVE, metadata-first viewing, original-study ZIP exports, and confirmed study removal remain available. This is not stable 1.0, Orthanc feature parity, or a clinically/production-qualified PACS. [Current status](docs/STATUS.md), [research datasets](docs/AI_DATASETS.md), [DICOMweb](docs/DICOMWEB.md), and [DIMSE](docs/DIMSE.md) define the implemented profiles; [the backlog](docs/BACKLOG.md) records remaining work.
+**Status: 0.6.0 source-available identity preview.** Local or organizational OpenID Connect sign-in, reader/contributor/administrator roles, revocable API credentials and deliberate local recovery accompany the existing archive workflows. The Datasets workspace provides saved cross-study series selections, technical review, immutable instance/hash manifests, optional patient-grouped train/validation/test splits, and verified Python downloads. Connected DICOMweb/DIMSE archives, durable transfers including C-GET/C-MOVE, metadata-first viewing, original-study ZIP exports, and confirmed study removal remain available. This is not stable 1.0, Orthanc feature parity, or a clinically/production-qualified PACS. [Current status](docs/STATUS.md), [research datasets](docs/AI_DATASETS.md), [DICOMweb](docs/DICOMWEB.md), and [DIMSE](docs/DIMSE.md) define the implemented profiles; [the backlog](docs/BACKLOG.md) records remaining work.
 
 ## Start with Docker
 
@@ -66,7 +66,7 @@ For a package with no Node installation step, see [portable packaging](docs/PACK
 6. To reclaim space, choose **Remove study**, review the instance count and byte total, and type **DELETE**. Only Store's archival copies are removed. This is irreversible without a backup; source files and remote archives are unchanged. Active readers/imports/transfers can block removal.
 7. Check Activity for import/removal outcomes. Identical reimports are idempotent; a conflicting SOP Instance UID is rejected instead of overwriting the original. Restart Store and confirm retained studies remain available.
 
-[Study management](docs/STUDY_MANAGEMENT.md) explains lazy loading, export verification, deletion guardrails, and recovery. **Upgrade note:** 0.3.0 migrates the catalog from schema 1 to schema 2. Stop Store and take a verified full backup with the old build before upgrading. An older build cannot open the upgraded archive; rollback requires restoring that backup into a separate directory.
+[Study management](docs/STUDY_MANAGEMENT.md) explains lazy loading, export verification, deletion guardrails, and recovery. **Upgrade note:** 0.6.0 upgrades authentication state to version2 and the catalog to schema3 as a security downgrade fence. Original DICOM bytes remain unchanged. Stop Store and take a verified full backup with the old build first. Older runtimes refuse the upgraded archive; rollback requires restoring the pre-upgrade backup into a separate directory. Never bypass the schema fence. See [identity upgrade/recovery](docs/IDENTITY.md#upgrade-and-downgrade-boundary).
 
 To exchange studies, open **Connections → Add connection**. Choose DICOMweb or DIMSE, save its address and protocol settings, and run **Test**. **Search studies → Retrieve study** copies selected remote objects into this archive. To send originals out, open a local study and choose **Send study**, **Send series**, or an individual instance's **Send** action. **Activity → Transfers** shows persisted progress, retry, and cancellation. Use generated data for an initial connection test, and confirm the configured destination is authorized before sending medical data.
 
@@ -89,11 +89,21 @@ The downloader needs **Python 3.9+ and its standard library**. It is an optional
 
 The optional [MONAI example](examples/datasets/monai_example.py) provides a separately qualified native Little Endian MONOCHROME2 2D/multiframe CPU input path; it does not stack a series into a spatial volume, convert SEG to masks, validate image/label alignment, train a model, or perform AI inference. See the [dataset workflow and limits](docs/AI_DATASETS.md) and [download/ML examples](examples/datasets/README.md) for exact dependencies and supported representations.
 
+## Choose local or organizational identity
+
+The default is one local administrator with no default password. For a shared archive, configure individual organizational sign-in through OpenID Connect in `hybrid` or `oidc` mode. Explicit issuer/subject and group mappings grant `reader`, `contributor` or `administrator`; unmapped organizational users receive no access. Local sign-in is deliberately retained in `hybrid`, and disabled in `oidc` mode.
+
+In **Administration → Identity**, administrators can issue named, expiring API credentials and revoke them without stopping Store. Use a `reader` credential for frozen dataset downloads, and a `contributor` credential for imports/curation. A local administrator session can change its password; an offline password-file recovery command is available to the server operator. Credentials remain separate from manifests and client bundles.
+
+Roles apply across HTTP routes, including DICOMweb. They do not replace the separately configured native DIMSE AE/IP policy. These are archive-wide roles, not per-patient or multi-tenant permissions. [Identity and permissions](docs/IDENTITY.md) documents configuration, exact role boundaries, recovery, backup and the unqualified-provider limits.
+
+Organizational setup recipes: [Microsoft Entra ID](docs/identity/MICROSOFT_ENTRA.md), [Okta](docs/identity/OKTA.md), [Keycloak](docs/identity/KEYCLOAK.md), and the [shared OIDC deployment checklist](docs/identity/GENERIC_OIDC.md). These recipes require qualification against your organization's provider and HTTPS deployment.
+
 ## Connect applications
 
 The DICOMweb base URL is **`http://127.0.0.1:8048/dicomweb`**. Choose the client access model in **Administration → Client access**:
 
-- **Authenticated clients** is the default for new and existing archives. DICOMweb clients send an API Bearer token or a valid session cookie; integrations do not need an interactive browser sign-in.
+- **Authenticated clients** is the default for new and existing archives. DICOMweb clients send a role-bound Store API Bearer credential or a valid local/OIDC session cookie; integrations do not need an interactive browser sign-in.
 - **Local research** lets local DICOMweb clients query, retrieve, and send studies without credentials. Both HTTP and DIMSE must bind to literal loopback addresses. Administration, management APIs, configured connections, and transfer jobs remain protected.
 
 Select **Local research → Save access settings**, or start a source installation with `node src/cli.js start --access-profile local-research`. The choice persists across restarts. [Client access](docs/ACCESS_CONTROL.md) covers both profiles, headless configuration, and the security boundaries. The public health route reveals only service availability:

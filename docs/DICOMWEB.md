@@ -1,6 +1,6 @@
-# DICOMweb interoperability preview — 0.2.1
+# DICOMweb implemented profile — 0.6.0
 
-EASI Store implements the core archive transactions plus bounded metadata and pixel retrieval. The target is eventual broad support for the released normative standard, implemented in explicit phases. The 0.2.x preview is a **documented subset**, not a declaration of full PS3.18 or complete Studies Service conformance.
+EASI Store implements the core archive transactions plus bounded metadata and pixel retrieval. The target is eventual broad support for the released normative standard, implemented in explicit phases. The current 0.6.0 profile is a **documented subset**, not a declaration of full PS3.18 or complete Studies Service conformance.
 
 Reference baseline: [DICOM PS3.18, Web Services](https://dicom.nema.org/medical/dicom/current/output/chtml/part18/PS3.18.html), released 2026d when this implementation was started. A future release must pin/review its baseline rather than assume the `current` URL stays unchanged.
 
@@ -8,7 +8,7 @@ Base URL: `http://127.0.0.1:8048/dicomweb`.
 
 ## Transaction matrix
 
-| Transaction/resource | 0.2.x profile |
+| Transaction/resource | Implemented 0.6.0 profile |
 | --- | --- |
 | QIDO studies | Supported: `GET /studies` |
 | QIDO series within a study | Supported: `GET /studies/{study}/series` |
@@ -30,7 +30,7 @@ Base URL: `http://127.0.0.1:8048/dicomweb`.
 
 Store has two explicit client profiles, configured in **Administration → Client access** or through `--access-profile` at startup. The [access guide](ACCESS_CONTROL.md) describes persistence, configuration, and deployment boundaries.
 
-- **Authenticated** is the default. Every DICOMweb resource, including metadata, frames, bulk values, originals, STOW, and `OPTIONS`, requires an API Bearer token or a valid session cookie. Machine clients do not need an interactive browser sign-in.
+- **Authenticated** is the default. Every DICOMweb resource, including metadata, frames, bulk values, originals, STOW, and `OPTIONS`, requires a role-authorized Store API Bearer credential or local/OIDC session cookie. Reader permits query/retrieve; STOW requires contributor or administrator rights. Machine clients do not need an interactive browser sign-in.
 - **Local research** permits ordinary clients on actual loopback connections to use those DICOMweb transactions without credentials. Both HTTP and DIMSE listeners must bind to literal loopback addresses. Start with `node src/cli.js start --access-profile local-research`, or save the profile in Administration. The administrator interface and management API still require authentication.
 
 `GET /api/v1/access` reports minimal access requirements without returning patient information or peer configuration. A forwarded IP header cannot grant research access. Do not enable wildcard cross-origin access or publicly forward an unauthenticated research listener.
@@ -49,7 +49,7 @@ curl --fail-with-body --cookie-jar /tmp/easi-store.cookies \
 
 Type `{"username":"YOUR_USERNAME","password":"YOUR_PASSWORD"}`, then end input with Control-D (or the equivalent on your platform). That input is visible in the terminal; use a private terminal. Treat the resulting cookie file as a credential, restrict access to it, and delete it after testing. Subsequent examples use that cookie jar. Do not commit credentials or cookie files.
 
-For a persistent integration credential, stop Store and run `node src/cli.js token --label 'My local client'` with the same `--data-dir` when using a custom archive. It prints a new token once; save it privately and restart Store. Clients send `Authorization: Bearer TOKEN`. Tokens are stored as hashes; this initial CLI workflow is for a local administrator with archive filesystem access. Token issuance does not replace the future granular service-identity/RBAC design.
+For a persistent integration credential, use **Administration → Identity** while Store is running. An administrator chooses a named, expiring `reader` credential for query/retrieve or a `contributor` credential for STOW/import. The creation API returns `{token,credential}` once; retain only the secret in the client's protected configuration and send `Authorization: Bearer TOKEN`. Lists omit secrets/hashes, and administrators can revoke credentials online. The offline `token` CLI remains an operator compatibility path. See [identity and permissions](IDENTITY.md) for the exact lifecycle and archive-wide role limits.
 
 In authenticated mode, cookie-based mutations, including login and STOW, require **`X-EASI-Store: 1`** in addition to the authenticated cookie where applicable. This is part of the same-origin request protection. Bearer clients do not need that cookie-specific header. Management/login mutations keep their normal protections in local research mode too.
 

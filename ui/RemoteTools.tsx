@@ -10,7 +10,7 @@ const date = (value:string) => /^\d{8}$/.test(value) ? `${value.slice(0,4)}-${va
 async function api<T=any>(path:string,method='GET',body?:unknown):Promise<T> {
   const response=await fetch(`/api/v1${path}`,{method,credentials:'same-origin',headers:{...(method!=='GET'?{'X-EASI-Store':'1','Content-Type':'application/json'}:{})},...(body!==undefined?{body:JSON.stringify(body)}:{})});
   const result=await response.json().catch(()=>null);
-  if(!response.ok) {if(response.status===401)window.dispatchEvent(new Event('easi-session-expired'));throw new Error(result?.error?.message || `The request failed (${response.status}).`);}
+  if(!response.ok) {if(response.status===401)window.dispatchEvent(new Event('easi-session-expired'));if(response.status===403)window.dispatchEvent(new Event('easi-access-denied'));throw new Error(result?.error?.message || `The request failed (${response.status}).`);}
   return result;
 }
 function Spinner() {return <span className="spinner" role="status" aria-label="Working"/>;}

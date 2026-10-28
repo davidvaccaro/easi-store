@@ -77,10 +77,19 @@ Do not equate “QIDO + WADO + STOW routes exist” with implementing the entire
 
 - PostgreSQL catalog and S3-compatible object storage adapters with shared durability/reconciliation contracts.
 - Concurrency, deployment/upgrade migrations, backup/snapshot/restore tooling, disaster recovery, capacity planning, and integrity scrubbing.
-- OIDC, granular RBAC, service identities, complete audit policy, secure HTTPS/proxy configuration, DICOM TLS, key rotation, and operational diagnostics.
+- Broader federation, per-resource/tenant authorization, managed service identities, complete audit policy, secure HTTPS/proxy qualification, DICOM TLS, key rotation and operational diagnostics. The initial OIDC/role/credential profile is described below.
 - Native macOS signed/notarized installer; Windows signed installer; Linux desktop packages and service units. Upgrade/uninstall must preserve archive data and make data-removal a separate explicit action.
 - Published AMD64/ARM64 images, software bill of materials, dependency/image scans, signed artifacts/provenance, and repeatable release verification.
 - Benchmarked single-host and production deployments; measure performance before introducing another implementation language.
+
+## Identity milestone — 0.6.0 preview
+
+- Keep workstation setup simple with one built-in local administrator. Add explicit `local`, `hybrid` and `oidc` HTTP modes without changing native DIMSE trust.
+- Support one configured OIDC issuer with explicit stable subject/group-to-role mappings and deny unmapped users. Use validated code/PKCE/state/nonce handling; no automatic email linking or organization-wide default access.
+- Apply `reader`, `contributor` and `administrator` permissions on the server across sessions and API credentials, including DICOMweb, exports, datasets, settings and destructive actions.
+- Add online named expiring credential creation/listing/revocation, local-session password change, offline password-file recovery and principal-attributed security actions.
+- Use auth-state version2 and catalog schema3 as an explicit security downgrade fence; qualify full backup/restore and rejection by older runtimes without rewriting originals.
+- Qualify against a controlled synthetic provider and supported deployment topology. Real organizational provider/reverse-proxy qualification, detailed resource scopes, multi-tenant authorization, SAML, SCIM and multiple providers remain separate work. See [IDENTITY.md](IDENTITY.md).
 
 ## Stable 1.0 gate
 

@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.6.0 — Local and organizational identity preview
+
+- Add explicit local, hybrid and OIDC HTTP sign-in modes, retaining one built-in local administrator and a deliberate operator recovery boundary.
+- Map configured issuer/subject or organization group identities to reader, contributor or administrator; unmapped users are denied and email does not link accounts.
+- Enforce shared role permissions across browser sessions and Store API credentials, including DICOMweb, exports, frozen dataset reads/hash checks, imports, curation, destructive operations and administration.
+- Add live named/expiring credential creation, redacted listing and revocation, local-session password change, offline password-file reset and principal-attributed administrative actions. Keep secrets outside URLs, audit records, client bundles and portable manifests.
+- Preserve anonymous loopback research as a separate DICOMweb-only exemption; supplied reader/invalid credentials do not acquire write rights. Native DIMSE retains its separately configured AE/IP policy.
+- Upgrade local authentication state to version2 and catalog schema3 as a security downgrade fence; older runtimes refuse role-aware archives. Preserve a verified pre-upgrade full backup for rollback; original DICOM bytes are unchanged.
+- Remain a source-available preview. Synthetic-provider protocol qualification does not certify Entra ID, Okta, Keycloak, an organizational deployment, fine-grained tenancy or clinical/production readiness.
+
 ## 0.5.0 — Reproducible research datasets preview
 
 - Add a Datasets workspace for named cross-study series selections, dataset-level organizational labels/review notes, indexed technical readiness, and visual review in the independent EASI View.
