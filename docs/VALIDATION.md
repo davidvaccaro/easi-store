@@ -137,6 +137,13 @@ per-file reports, archives and deployment credentials are excluded. Source is
 published under the Community License. Exact-candidate receipts remain retained
 under ignored local artifact directories; later documentation-only commits do
 not change the qualified runtime or replace the tagged package contents.
+
+Anonymous HTTP verification confirmed the public repository, README, license,
+health guide and release tag, then downloaded all **12 release assets** and
+matched their exact sizes/SHA-256 without credentials. The release tag points
+to the qualified source above. Anonymous GHCR access currently remains 401
+pending the separate GitHub package-visibility activation; source Docker builds
+and the public portable downloads are available meanwhile.
 These results qualify the [declared first-release profile](CONFORMANCE.md),
 not arbitrary PACS topologies, every stored object's rendering or clinical use.
 
