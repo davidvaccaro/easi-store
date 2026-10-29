@@ -16,10 +16,7 @@ Install [Docker Desktop](https://www.docker.com/products/docker-desktop/) or Doc
 docker compose up --build -d
 ```
 
-The qualified container images are published, but anonymous GHCR pulls await
-GitHub package-visibility activation. Until that account step is complete, use
-the source build above or the portable release downloads. After activation,
-use the published image without a source build:
+To use the published image without a source build or registry sign-in:
 
 ```sh
 docker volume create easi-store-archive

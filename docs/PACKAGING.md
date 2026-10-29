@@ -14,11 +14,9 @@ A portable package is not a signed operating-system installer. The preview inclu
 
 ## Docker
 
-The versioned published image supports **Linux AMD64 and ARM64**. Anonymous
-GHCR pulls await the final GitHub package-visibility activation. Until that is
-enabled, use the portable downloads or `docker compose up --build -d` from a
-source checkout. Once public access is enabled, pull the qualified image and
-start the supplied persistent-volume configuration:
+The versioned published image supports **Linux AMD64 and ARM64** and can be
+pulled without registry sign-in. From a source checkout, pull the qualified
+image and start the supplied persistent-volume configuration:
 
 ```sh
 docker compose pull

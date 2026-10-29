@@ -139,11 +139,17 @@ under ignored local artifact directories; later documentation-only commits do
 not change the qualified runtime or replace the tagged package contents.
 
 Anonymous HTTP verification confirmed the public repository, README, license,
-health guide and release tag, then downloaded all **12 release assets** and
+health guide and release tag, then downloaded all **12 original release assets** and
 matched their exact sizes/SHA-256 without credentials. The release tag points
-to the qualified source above. Anonymous GHCR access currently remains 401
-pending the separate GitHub package-visibility activation; source Docker builds
-and the public portable downloads are available meanwhile.
+to the qualified source above.
+
+On **2026-10-29**, anonymous GHCR verification matched the exact published index,
+both Linux AMD64/ARM64 manifests and image configurations, including qualified
+source/version labels. Actual Docker pulls of both platforms succeeded with an
+isolated empty Docker configuration and no registry login. Public image access
+is enabled; the qualified image digests and original release downloads are
+unchanged. The [supplemental container-access receipt](https://github.com/davidvaccaro/easi-store/releases/download/v1.0.0-rc.1/easi-store-1.0.0-rc.1-anonymous-container-verification.json)
+and its SHA-256 sidecar are attached to the release.
 These results qualify the [declared first-release profile](CONFORMANCE.md),
 not arbitrary PACS topologies, every stored object's rendering or clinical use.
 
